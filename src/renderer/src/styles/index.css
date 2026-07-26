@@ -279,13 +279,47 @@ textarea {
   border-color: transparent;
 }
 
+/* A broader grant than the per-tool buttons next to it, so it reads as
+   distinct rather than as just another equally-weighted choice. */
+.btn.allow-all {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.btn.allow-all:hover:not(:disabled) {
+  background: rgba(212, 162, 78, 0.12);
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.pill.toggle {
+  cursor: pointer;
+}
+
+.pill.toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.pill.toggle.on {
+  background: rgba(212, 162, 78, 0.16);
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.pill.toggle.on:hover {
+  color: var(--yellow);
+}
+
 /* -------------------------------------------------------------- main pane */
 
 .main {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   height: 100%;
+  overflow: hidden;
 }
 
 .topbar {
@@ -355,6 +389,7 @@ textarea {
 
 .thread {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 22px 0 8px;
   scroll-behavior: smooth;

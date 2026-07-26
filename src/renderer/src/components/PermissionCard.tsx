@@ -16,7 +16,20 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
       ? request.toolCall.rawInput.command
       : null
 
-  // Keyboard shortcuts mirror the CLI: y allows once, a always, n denies.
+  // "Allow all" is a real session config option Copilot exposes (id: allow_all,
+  // category: permissions) — once set to "on" the agent stops calling
+  // session/request_permission at all. Distinct from "always allow <tool>",
+  // which only allowlists this one command; this is a global bypass, so it
+  // gets its own explicit action rather than piggybacking on an agent option.
+  const allowAll = (): void => {
+    const fallback = request.options.find((o) => o.kind === 'allow_once') ?? request.options[0]
+    if (!fallback) return
+    void window.acp.setConfigOption(request.sessionId, 'allow_all', 'on')
+    void answer(request.requestId, fallback.optionId)
+  }
+
+  // Keyboard shortcuts mirror the CLI: y allows once, a always, n denies,
+  // shift+A allows all.
   useEffect(() => {
     if (resolved) return
     const byKind = (kind: string): string | undefined =>
@@ -25,6 +38,11 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return
+      if (e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        allowAll()
+        return
+      }
       const map: Record<string, string | undefined> = {
         y: byKind('allow_once'),
         a: byKind('allow_always'),
@@ -71,6 +89,15 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
               <kbd style={{ opacity: 0.55, fontSize: 11 }}>{hint(opt.kind)}</kbd>
             </button>
           ))}
+          <span className="spacer" />
+          <button
+            className="btn allow-all"
+            title="Approve this and stop asking for the rest of the session"
+            onClick={allowAll}
+          >
+            Allow all
+            <kbd style={{ opacity: 0.7, fontSize: 11 }}>⇧A</kbd>
+          </button>
         </div>
       )}
     </div>

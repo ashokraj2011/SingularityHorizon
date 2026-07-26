@@ -11,6 +11,12 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
     (o): o is NonNullable<typeof o> => !!o && !!o.options?.length
   )
 
+  // Real session-level option Copilot exposes (id: allow_all): once "on" the
+  // agent stops calling session/request_permission entirely, so it's a toggle
+  // rather than a picker — one click on, one click off.
+  const allowAllOption = session.configOptions.find((o) => o.id === 'allow_all')
+  const allowAllOn = allowAllOption?.currentValue === 'on'
+
   const home = session.cwd.replace(/^\/Users\/[^/]+/, '~')
 
   return (
@@ -29,6 +35,19 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
             ? ` / ${formatTokens(session.usage.contextWindow)}`
             : ' tokens'}
         </span>
+      )}
+
+      {allowAllOption && (
+        <button
+          className={`pill toggle ${allowAllOn ? 'on' : ''}`}
+          title={
+            allowAllOption.description ??
+            'Approve all tool, path, and URL requests without asking'
+          }
+          onClick={() => void setConfigOption('allow_all', allowAllOn ? 'off' : 'on')}
+        >
+          {allowAllOn ? 'Allow all: on' : 'Allow all'}
+        </button>
       )}
 
       {primary.map((option) => (
