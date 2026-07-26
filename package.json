@@ -1,0 +1,45 @@
+{
+  "name": "event-horizon",
+  "version": "0.1.0",
+  "description": "Event Horizon — a Singularity tool. Desktop client for coding agents that speak the Agent Client Protocol.",
+  "main": "./out/main/index.js",
+  "author": "Ashok Raj",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=cjs --target=node22 --outfile=out/smoke.cjs --log-level=error && node out/smoke.cjs",
+    "dist": "electron-vite build && electron-builder"
+  },
+  "dependencies": {
+    "diff": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "highlight.js": "^11.11.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^9.0.1",
+    "rehype-highlight": "^7.0.1",
+    "remark-gfm": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11",
+    "zustand": "^5.0.2"
+  },
+  "build": {
+    "appId": "ai.singularity.event-horizon",
+    "productName": "Event Horizon",
+    "directories": { "output": "release" },
+    "files": ["out/**/*", "package.json"],
+    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg"] }
+  }
+}
