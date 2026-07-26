@@ -17,6 +17,7 @@ import {
 } from '../../shared/acp'
 import type {
   AgentDefinition,
+  InvokedSkill,
   MainEvent,
   PendingPermission,
   SessionSnapshot,
@@ -158,15 +159,26 @@ export class AgentSession extends EventEmitter {
 
   /* ---------------------------------------------------------------- verbs */
 
-  async prompt(content: ContentBlock[]): Promise<void> {
+  /**
+   * `display` lets a caller show something shorter than what is sent — a skill
+   * invocation expands to a whole SKILL.md, and pasting that into the
+   * transcript would bury the conversation. The block records the expansion
+   * size so the substitution stays visible rather than hidden.
+   */
+  async prompt(
+    content: ContentBlock[],
+    display?: { text: string; skill?: InvokedSkill }
+  ): Promise<void> {
     const acpSessionId = this.snapshot.acpSessionId
     if (!this.peer || !acpSessionId) throw new Error('Session is not ready')
 
-    const text = content
-      .filter((c): c is Extract<ContentBlock, { type: 'text' }> => c.type === 'text')
-      .map((c) => c.text)
-      .join('\n')
-    this.pushBlock({ kind: 'user', text })
+    const text =
+      display?.text ??
+      content
+        .filter((c): c is Extract<ContentBlock, { type: 'text' }> => c.type === 'text')
+        .map((c) => c.text)
+        .join('\n')
+    this.pushBlock({ kind: 'user', text, skill: display?.skill })
     this.patch({ status: 'busy' })
 
     try {
@@ -275,6 +287,18 @@ export class AgentSession extends EventEmitter {
         return {}
 
       default: {
+        // We still answer -32601 so the agent can fall back, but the ask is
+        // surfaced rather than swallowed. An agent asking something we can't
+        // service (elicitation/create is the live example — it is in the spec
+        // but not in Copilot 1.0.75 or the published TS lib) would otherwise
+        // vanish silently, and the user would just see the turn stall.
+        this.pushBlock({
+          kind: 'notice',
+          level: 'error',
+          text:
+            `The agent called "${method}", which this client does not implement yet, ` +
+            `so it was declined. Anything it was asking for here did not reach you.`
+        })
         const err = new Error(`Method not found: ${method}`) as Error & { code?: number }
         err.code = -32601
         throw err

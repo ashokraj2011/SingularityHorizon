@@ -1,15 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { SessionSnapshot } from '@shared/ipc'
+import type { SessionSnapshot, SkillInfo } from '@shared/ipc'
 import { useStore } from '../store'
+import { buildSlashItems, type SlashItem } from '../slashMenu'
 
-interface MenuItem {
-  key: string
-  label: string
-  description?: string
-  /** Text that replaces the active token when accepted. */
-  insert: string
-}
+/** Stable reference — a fresh [] each render would loop the selector. */
+const EMPTY_SKILLS: SkillInfo[] = []
+
+type MenuItem = SlashItem
 
 export function Composer({ session }: { session: SessionSnapshot }): React.JSX.Element {
   const [text, setText] = useState('')
@@ -18,6 +16,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const send = useStore((s) => s.send)
   const cancel = useStore((s) => s.cancel)
+  const skills = useStore((s) => s.skills[session.id] ?? EMPTY_SKILLS)
 
   const busy = session.status === 'busy'
   const disabled = session.status === 'starting' || session.status === 'error' ||
@@ -48,16 +47,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
   const items: MenuItem[] = useMemo(() => {
     if (!token) return []
     if (token.kind === 'slash') {
-      const q = token.query.toLowerCase()
-      return session.commands
-        .filter((c) => c.name.toLowerCase().includes(q))
-        .slice(0, 40)
-        .map((c) => ({
-          key: c.name,
-          label: `/${c.name}`,
-          description: c.description,
-          insert: `/${c.name} `
-        }))
+      return buildSlashItems(session.commands, skills, token.query)
     }
     return fileMatches.slice(0, 40).map((path) => {
       const rel = path.startsWith(session.cwd + '/')
@@ -67,10 +57,11 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
         key: path,
         label: rel.split('/').pop() ?? rel,
         description: rel,
-        insert: `@${rel} `
+        insert: `@${rel} `,
+        local: false
       }
     })
-  }, [token, session.commands, fileMatches, session.cwd])
+  }, [token, session.commands, skills, fileMatches, session.cwd])
 
   useEffect(() => setSelected(0), [items.length, token?.kind])
 
@@ -143,6 +134,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
               >
                 <span className="k">{item.label}</span>
                 {item.description && <span className="d">{item.description}</span>}
+                {item.badge && <span className="badge">{item.badge}</span>}
               </button>
             ))}
           </div>

@@ -1,15 +1,19 @@
 import { create } from 'zustand'
 
 import type { ContentBlock } from '@shared/acp'
-import type { AgentDefinition, MainEvent, SessionSnapshot } from '@shared/ipc'
+import type { AgentDefinition, MainEvent, SessionSnapshot, SkillInfo } from '@shared/ipc'
+import { resolveSkillInvocation } from './slashMenu'
 
 interface StoreState {
   sessions: Record<string, SessionSnapshot>
   order: string[]
   activeId: string | null
   agents: AgentDefinition[]
+  /** Locally-loaded skills, per session — the agent does not advertise these. */
+  skills: Record<string, SkillInfo[]>
   launching: boolean
   launchError: string | null
+  loadSkills: (sessionId: string) => Promise<void>
 
   bootstrap: () => Promise<void>
   applyEvent: (event: MainEvent) => void
@@ -27,8 +31,20 @@ export const useStore = create<StoreState>((set, get) => ({
   order: [],
   activeId: null,
   agents: [],
+  skills: {},
   launching: false,
   launchError: null,
+
+  loadSkills: async (sessionId) => {
+    const session = get().sessions[sessionId]
+    if (!session) return
+    try {
+      const skills = await window.acp.listSkills(session.cwd)
+      set({ skills: { ...get().skills, [sessionId]: skills } })
+    } catch {
+      set({ skills: { ...get().skills, [sessionId]: [] } })
+    }
+  },
 
   bootstrap: async () => {
     const [agents, sessions] = await Promise.all([
@@ -41,6 +57,7 @@ export const useStore = create<StoreState>((set, get) => ({
       order: sessions.map((s) => s.id),
       activeId: sessions[0]?.id ?? null
     })
+    for (const s of sessions) void get().loadSkills(s.id)
   },
 
   applyEvent: (event) => {
@@ -53,6 +70,7 @@ export const useStore = create<StoreState>((set, get) => ({
           order: [...state.order, event.session.id],
           activeId: event.session.id
         })
+        void get().loadSkills(event.session.id)
         return
       }
       case 'session:blocks': {
@@ -110,8 +128,44 @@ export const useStore = create<StoreState>((set, get) => ({
   setActive: (id) => set({ activeId: id }),
 
   send: async (text) => {
-    const { activeId } = get()
+    const state = get()
+    const { activeId } = state
     if (!activeId || !text.trim()) return
+    const session = state.sessions[activeId]
+
+    // A leading /name that matches a locally-loaded skill is expanded here.
+    // Uses the same resolver as the menu so the two can never disagree about
+    // who owns a name.
+    if (session) {
+      const invocation = resolveSkillInvocation(
+        text,
+        session.commands,
+        state.skills[activeId] ?? []
+      )
+      if (invocation) {
+        const { skill, args } = invocation
+        try {
+          const { text: expanded } = await window.acp.expandSkill(
+            session.cwd,
+            skill.name,
+            args
+          )
+          await window.acp.prompt(activeId, [{ type: 'text', text: expanded }], {
+            text: text.trim(),
+            skill: {
+              name: skill.name,
+              source: skill.source,
+              expandedChars: expanded.length
+            }
+          })
+          return
+        } catch (err) {
+          // Fall through and send verbatim rather than losing the message.
+          console.error('skill expansion failed', err)
+        }
+      }
+    }
+
     const content: ContentBlock[] = [{ type: 'text', text }]
     await window.acp.prompt(activeId, content)
   },

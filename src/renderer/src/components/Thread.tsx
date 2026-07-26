@@ -50,7 +50,17 @@ function hasStreamingTail(blocks: ThreadBlock[]): boolean {
 function Block({ block }: { block: ThreadBlock }): React.JSX.Element | null {
   switch (block.kind) {
     case 'user':
-      return <div className="block-user">{block.text}</div>
+      return (
+        <div className="block-user">
+          {block.text}
+          {block.skill && (
+            <div className="skill-chip" title={`Loaded from ${block.skill.source}`}>
+              skill · {block.skill.name} · {block.skill.source} ·{' '}
+              {block.skill.expandedChars.toLocaleString()} chars sent
+            </div>
+          )}
+        </div>
+      )
 
     case 'assistant':
       return (

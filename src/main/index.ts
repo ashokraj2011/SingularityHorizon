@@ -5,9 +5,10 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import type { ContentBlock } from '../shared/acp'
-import type { DirEntry, MainEvent } from '../shared/ipc'
+import type { DirEntry, InvokedSkill, MainEvent } from '../shared/ipc'
 import { availableAgents } from './agents'
 import { SessionManager } from './manager'
+import { expandSkill, listSkills } from './skills'
 
 const manager = new SessionManager()
 let mainWindow: BrowserWindow | null = null
@@ -84,8 +85,17 @@ handle('sessions:create', (opts: { cwd: string; agentId: string }) =>
   manager.create(opts.cwd, opts.agentId)
 )
 handle('sessions:close', (sessionId: string) => manager.close(sessionId))
-handle('sessions:prompt', (sessionId: string, content: ContentBlock[]) =>
-  manager.prompt(sessionId, content)
+handle(
+  'sessions:prompt',
+  (
+    sessionId: string,
+    content: ContentBlock[],
+    display?: { text: string; skill?: InvokedSkill }
+  ) => manager.prompt(sessionId, content, display)
+)
+handle('skills:list', (cwd: string) => listSkills(cwd))
+handle('skills:expand', (cwd: string, name: string, args: string) =>
+  expandSkill(cwd, name, args)
 )
 handle('sessions:cancel', (sessionId: string) => manager.cancel(sessionId))
 handle('sessions:setConfigOption', (sessionId: string, optionId: string, value: string) =>

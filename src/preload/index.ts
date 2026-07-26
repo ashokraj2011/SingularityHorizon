@@ -13,8 +13,10 @@ const api: AcpStudioApi = {
   listSessions: () => ipcRenderer.invoke('sessions:list'),
   createSession: (opts) => ipcRenderer.invoke('sessions:create', opts),
   closeSession: (sessionId) => ipcRenderer.invoke('sessions:close', sessionId),
-  prompt: (sessionId: string, content: ContentBlock[]) =>
-    ipcRenderer.invoke('sessions:prompt', sessionId, content),
+  prompt: (sessionId, content: ContentBlock[], display) =>
+    ipcRenderer.invoke('sessions:prompt', sessionId, content, display),
+  listSkills: (cwd) => ipcRenderer.invoke('skills:list', cwd),
+  expandSkill: (cwd, name, args) => ipcRenderer.invoke('skills:expand', cwd, name, args),
   cancel: (sessionId) => ipcRenderer.invoke('sessions:cancel', sessionId),
   respondPermission: (requestId, optionId) =>
     ipcRenderer.invoke('permissions:respond', requestId, optionId),

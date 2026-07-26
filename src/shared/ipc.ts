@@ -19,13 +19,31 @@ import type {
  * burst instead of appending thousands of nodes.
  */
 export type ThreadBlock =
-  | { id: string; kind: 'user'; text: string; at: number }
+  | { id: string; kind: 'user'; text: string; at: number; skill?: InvokedSkill }
   | { id: string; kind: 'assistant'; text: string; at: number; streaming: boolean }
   | { id: string; kind: 'thought'; text: string; at: number; streaming: boolean }
   | { id: string; kind: 'tool'; call: ToolCall; at: number }
   | { id: string; kind: 'plan'; entries: PlanEntry[]; at: number }
   | { id: string; kind: 'permission'; request: PendingPermission; at: number }
   | { id: string; kind: 'notice'; level: 'info' | 'error'; text: string; at: number }
+
+/** A skill loaded from disk by this client, not advertised by the agent. */
+export interface SkillInfo {
+  name: string
+  description: string
+  argumentHint?: string
+  /** 'repo' | 'user' | plugin directory name. */
+  source: string
+  path: string
+}
+
+/** Recorded on the user block so the transcript shows what was really sent. */
+export interface InvokedSkill {
+  name: string
+  source: string
+  /** Character count of the expanded instructions handed to the agent. */
+  expandedChars: number
+}
 
 export interface PendingPermission {
   requestId: string
@@ -96,7 +114,17 @@ export interface AcpStudioApi {
   listSessions(): Promise<SessionSnapshot[]>
   createSession(opts: { cwd: string; agentId: string }): Promise<SessionSnapshot>
   closeSession(sessionId: string): Promise<void>
-  prompt(sessionId: string, content: ContentBlock[]): Promise<void>
+  prompt(
+    sessionId: string,
+    content: ContentBlock[],
+    display?: { text: string; skill?: InvokedSkill }
+  ): Promise<void>
+  listSkills(cwd: string): Promise<SkillInfo[]>
+  expandSkill(
+    cwd: string,
+    name: string,
+    args: string
+  ): Promise<{ text: string; skill: SkillInfo }>
   cancel(sessionId: string): Promise<void>
   respondPermission(requestId: string, optionId: string | null): Promise<void>
   setConfigOption(sessionId: string, optionId: string, value: string): Promise<void>

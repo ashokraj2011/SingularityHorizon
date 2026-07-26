@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 
-import type { MainEvent, SessionSnapshot } from '../shared/ipc'
+import type { InvokedSkill, MainEvent, SessionSnapshot } from '../shared/ipc'
 import type { ContentBlock } from '../shared/acp'
 import { AgentSession } from './acp/session'
 import { resolveAgent } from './agents'
@@ -59,8 +59,12 @@ export class SessionManager extends EventEmitter {
     this.emit('event', { type: 'session:removed', sessionId })
   }
 
-  prompt(sessionId: string, content: ContentBlock[]): Promise<void> {
-    return this.require(sessionId).prompt(content)
+  prompt(
+    sessionId: string,
+    content: ContentBlock[],
+    display?: { text: string; skill?: InvokedSkill }
+  ): Promise<void> {
+    return this.require(sessionId).prompt(content, display)
   }
 
   cancel(sessionId: string): void {

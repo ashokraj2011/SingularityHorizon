@@ -26,7 +26,8 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Inline permissions** — nothing runs until you approve it. `Y` / `A` / `N` for allow-once / always / deny, `Esc` to cancel. Answered prompts stay in the transcript showing what you chose.
 - **Plans** — the agent's task list, updating as steps complete.
 - **Live config** — model, mode (Agent / Plan / Autopilot), and reasoning effort are read from the agent and switchable mid-session.
-- **Composer** — `/` completes the agent's real advertised slash commands, `@` completes workspace files.
+- **Composer** — `/` completes the agent's advertised slash commands *and* locally-loaded skills, `@` completes workspace files.
+- **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
 
 ## Architecture
@@ -66,15 +67,33 @@ into the trailing block of the same kind rather than appending a node per token.
 **Unknown update kinds are ignored, not fatal.** ACP is in preview and agents add variants;
 an unrecognised `sessionUpdate` should render nothing, not crash the thread.
 
+**Skills are loaded client-side, by necessity.** Copilot CLI 1.0.75's ACP server advertises its
+32 built-in slash commands but not skills — `/skills` over ACP reports only the one builtin, and
+installed-plugin skills never appear, even inside the plugin's own repo. (The server does load
+plugins: their *agents* show up in the agent config option. Just not their skills.) Since a skill
+is only a `SKILL.md` with frontmatter, `src/main/skills.ts` reads them directly from repo,
+user, and plugin directories and expands an invocation into the prompt — which is what the
+agent-side implementation does anyway.
+
+Two rules make that safe. A name the agent advertises always wins, so a local file can never
+shadow a real agent command and silently change behaviour. And the transcript shows the short
+invocation you typed with a chip recording the skill, its source, and how many characters were
+actually sent — the substitution is visible rather than hidden.
+
 ## Verifying
 
 ```bash
 npm run smoke
+npm run skills:check [cwd]
 ```
 
 Spawns the real agent, runs a prompt that forces a tool call, auto-approves the permission
 request, and asserts the whole pipeline — handshake, model/config advertisement, streamed
 text, tool call reaching `completed`, `end_turn`, and an actual file mutation on disk.
+
+`skills:check` covers the skill pipeline: discovery across all roots, frontmatter parsing,
+menu ordering and precedence (including a deliberate agent/skill name clash in both the menu
+and the send path), argument capture, and the shape of the expanded prompt.
 
 ```bash
 npm run typecheck
