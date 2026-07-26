@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events'
 
-import type { InvokedSkill, MainEvent, SessionSnapshot } from '../shared/ipc'
-import type { ContentBlock } from '../shared/acp'
+import type { MainEvent, PromptRequest, SessionSnapshot } from '../shared/ipc'
 import { AgentSession } from './acp/session'
 import { resolveAgent } from './agents'
 
@@ -59,12 +58,29 @@ export class SessionManager extends EventEmitter {
     this.emit('event', { type: 'session:removed', sessionId })
   }
 
-  prompt(
-    sessionId: string,
-    content: ContentBlock[],
-    display?: { text: string; skill?: InvokedSkill }
-  ): Promise<void> {
-    return this.require(sessionId).prompt(content, display)
+  prompt(sessionId: string, request: PromptRequest): Promise<void> {
+    return this.require(sessionId).prompt(request)
+  }
+
+  runCommandSilent(sessionId: string, command: string): Promise<string> {
+    return this.require(sessionId).runCommandSilent(command)
+  }
+
+  refreshContext(sessionId: string): Promise<void> {
+    return this.require(sessionId).refreshContext()
+  }
+
+  /**
+   * Replaces a session with a fresh one on the same cwd and agent. This is the
+   * real "start over" — a new ACP session means new agent context, which no
+   * amount of /compact achieves.
+   */
+  async restart(sessionId: string): Promise<SessionSnapshot | null> {
+    const existing = this.sessions.get(sessionId)
+    if (!existing) return null
+    const { cwd, agent } = existing
+    this.close(sessionId)
+    return this.create(cwd, agent.id)
   }
 
   cancel(sessionId: string): void {

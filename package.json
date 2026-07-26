@@ -12,6 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=cjs --target=node22 --outfile=out/smoke.cjs --log-level=error && node out/smoke.cjs",
     "skills:check": "esbuild scripts/skills-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --outfile=out/skills-check.mjs --log-level=error && node out/skills-check.mjs",
+    "context:check": "esbuild scripts/context-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/context-check.mjs --log-level=error && node out/context-check.mjs",
+    "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
+    "check": "npm run typecheck && npm run context:check && npm run skills:check && npm run smoke && npm run attach:check",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {

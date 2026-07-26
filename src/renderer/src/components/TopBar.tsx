@@ -1,23 +1,39 @@
-import type { SessionSnapshot } from '@shared/ipc'
-import { useStore } from '../store'
+import { useEffect, useRef, useState } from 'react'
 
-/** Config options worth surfacing in the header; the rest live in the menu. */
-const PRIMARY = ['mode', 'model', 'reasoning_effort']
+import type { SessionSnapshot } from '@shared/ipc'
+import { formatTokens } from '@shared/contextInfo'
+import { useStore } from '../store'
+import { ContextPanel } from './ContextPanel'
 
 export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Element {
   const setConfigOption = useStore((s) => s.setConfigOption)
+  const restartSession = useStore((s) => s.restartSession)
+  const runCommand = useStore((s) => s.runCommand)
+  const refreshContext = useStore((s) => s.refreshContext)
 
-  const primary = PRIMARY.map((id) => session.configOptions.find((o) => o.id === id)).filter(
-    (o): o is NonNullable<typeof o> => !!o && !!o.options?.length
-  )
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
-  // Real session-level option Copilot exposes (id: allow_all): once "on" the
-  // agent stops calling session/request_permission entirely, so it's a toggle
-  // rather than a picker — one click on, one click off.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onDown = (e: MouseEvent): void => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [menuOpen])
+
   const allowAllOption = session.configOptions.find((o) => o.id === 'allow_all')
   const allowAllOn = allowAllOption?.currentValue === 'on'
-
+  const ctx = session.context
   const home = session.cwd.replace(/^\/Users\/[^/]+/, '~')
+  const busy = session.status === 'busy'
+
+  const act = (fn: () => void): void => {
+    setMenuOpen(false)
+    fn()
+  }
 
   return (
     <header className="topbar">
@@ -28,13 +44,24 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
 
       <span className="spacer" />
 
-      {session.usage?.totalTokens != null && (
-        <span className="pill" title="Tokens used this session">
-          {formatTokens(session.usage.totalTokens)}
-          {session.usage.contextWindow
-            ? ` / ${formatTokens(session.usage.contextWindow)}`
-            : ' tokens'}
-        </span>
+      {ctx && (
+        <button
+          className="meter"
+          title={`Context: ${formatTokens(ctx.usedTokens)} of ${formatTokens(
+            ctx.totalTokens
+          )} tokens (${ctx.percent}%). Click for the breakdown.`}
+          onClick={() => setPanelOpen(true)}
+        >
+          <span className="meter-bar">
+            <span
+              className={`meter-fill ${ctx.percent >= 80 ? 'hot' : ctx.percent >= 60 ? 'warm' : ''}`}
+              style={{ width: `${Math.min(100, Math.max(2, ctx.percent))}%` }}
+            />
+          </span>
+          <span className="meter-label">
+            {formatTokens(ctx.usedTokens)}/{formatTokens(ctx.totalTokens)}
+          </span>
+        </button>
       )}
 
       {allowAllOption && (
@@ -50,33 +77,74 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
         </button>
       )}
 
-      {primary.map((option) => (
-        <select
-          key={option.id}
-          className="select"
-          title={option.description ?? option.name}
-          value={option.currentValue ?? ''}
-          onChange={(e) => void setConfigOption(option.id, e.target.value)}
+      <div className="menu-wrap" ref={menuRef}>
+        <button
+          className="icon-btn"
+          title="Session actions"
+          onClick={() => setMenuOpen((v) => !v)}
         >
-          {option.options!.map((choice) => (
-            <option key={choice.value} value={choice.value}>
-              {option.id === 'reasoning_effort' ? `effort: ${choice.name}` : choice.name}
-            </option>
-          ))}
-        </select>
-      ))}
+          ⋯
+        </button>
+        {menuOpen && (
+          <div className="drop">
+            <div className="drop-label">Context</div>
+            <button className="menu-item" onClick={() => act(() => setPanelOpen(true))}>
+              Show context breakdown
+            </button>
+            <button
+              className="menu-item"
+              disabled={busy}
+              onClick={() => act(() => void refreshContext())}
+            >
+              Refresh usage
+            </button>
+            <button
+              className="menu-item"
+              disabled={busy}
+              title="Ask the agent to summarize the conversation so far, freeing context"
+              onClick={() => act(() => void runCommand('/compact'))}
+            >
+              Compact conversation
+            </button>
 
-      {session.agentName && (
-        <span className="pill" title={`${session.agentName} ${session.agentVersion ?? ''}`}>
-          {session.agentName}
-        </span>
-      )}
+            <div className="drop-sep" />
+            <div className="drop-label">Agent memory</div>
+            <button
+              className="menu-item"
+              disabled={busy}
+              onClick={() => act(() => void runCommand('/memory show'))}
+            >
+              Show memory status
+            </button>
+            <button
+              className="menu-item"
+              disabled={busy}
+              onClick={() => act(() => void runCommand('/memory on'))}
+            >
+              Enable memory
+            </button>
+            <button
+              className="menu-item"
+              disabled={busy}
+              onClick={() => act(() => void runCommand('/memory off'))}
+            >
+              Disable memory
+            </button>
+
+            <div className="drop-sep" />
+            <div className="drop-label">Session</div>
+            <button
+              className="menu-item"
+              title="Close this session and open a new one on the same folder. Clears all agent context."
+              onClick={() => act(() => void restartSession())}
+            >
+              Start fresh session
+            </button>
+          </div>
+        )}
+      </div>
+
+      {panelOpen && <ContextPanel session={session} onClose={() => setPanelOpen(false)} />}
     </header>
   )
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1000) return `${Math.round(n / 1000)}k`
-  return String(n)
 }

@@ -26,7 +26,10 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Inline permissions** — nothing runs until you approve it. `Y` / `A` / `N` for allow-once / always / deny, `Esc` to cancel. Answered prompts stay in the transcript showing what you chose.
 - **Plans** — the agent's task list, updating as steps complete.
 - **Live config** — model, mode (Agent / Plan / Autopilot), and reasoning effort are read from the agent and switchable mid-session.
-- **Composer** — `/` completes the agent's advertised slash commands *and* locally-loaded skills, `@` completes workspace files.
+- **Composer** — `/` completes the agent's advertised slash commands *and* locally-loaded skills, `@` completes workspace files. Mode, model, reasoning effort, and agent pickers sit in the composer bar, driven entirely by what the agent declares.
+- **Attachments** — `+` adds files or folders. Files are embedded as ACP `resource` blocks (binaries referenced by path, oversized files truncated with disclosure); folders attach as a bounded listing. What was sent is recorded on the message.
+- **Context meter** — live context-window usage with a full breakdown, plus session token totals.
+- **Session actions** — compact the conversation, inspect or toggle agent memory, or start a fresh session on the same folder.
 - **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
 
@@ -80,11 +83,31 @@ shadow a real agent command and silently change behaviour. And the transcript sh
 invocation you typed with a chip recording the skill, its source, and how many characters were
 actually sent — the substitution is visible rather than hidden.
 
+**Token accounting is scraped, not pushed.** ACP defines a `usage_update` session notification;
+Copilot 1.0.75 never sends one. The numbers exist only in the rendered text of `/context` and
+`/usage`, so the client runs those and parses them (`src/shared/contextInfo.ts`). Because that
+output is human-facing and GitHub can change it freely, every parser returns null rather than
+throwing, and a null degrades to "no meter" instead of a zeroed one — a meter reading 0%
+would claim the context is empty when the truth is that we couldn't tell.
+
+Those runs go through `runCommandSilent`, which captures streamed output instead of appending
+it to the transcript. Since a silent refresh and a real turn share one agent and one
+notification stream, every `session/prompt` is serialized through a queue — overlapping them
+would put the refresh's output in your transcript and your turn's output in the capture buffer.
+
+**Attachments really do reach the model.** An embedded `resource` block is honoured even for a
+URI that exists nowhere on disk: Copilot materializes it to a temp file and reads it. This is
+verified in `attach:check` by attaching a file outside the session's cwd containing a marker
+that no tool could otherwise find, and asserting the model reports it back.
+
 ## Verifying
 
 ```bash
-npm run smoke
-npm run skills:check [cwd]
+npm run check              # everything below, in order
+npm run smoke              # one real prompt turn, end to end
+npm run skills:check [cwd] # skill discovery, precedence, expansion
+npm run context:check      # /context and /usage parsers (offline)
+npm run attach:check       # attachments reach the model; silent commands stay silent
 ```
 
 Spawns the real agent, runs a prompt that forces a tool call, auto-approves the permission
@@ -94,6 +117,13 @@ text, tool call reaching `completed`, `end_turn`, and an actual file mutation on
 `skills:check` covers the skill pipeline: discovery across all roots, frontmatter parsing,
 menu ordering and precedence (including a deliberate agent/skill name clash in both the menu
 and the send path), argument capture, and the shape of the expanded prompt.
+
+`context:check` runs offline against captured `/context` and `/usage` fixtures, including the
+`<1%` and no-suffix (`426`) cases and four different malformed inputs that must degrade to null.
+
+`attach:check` builds blocks for a text file, a binary, an oversized file, a folder, and a
+missing path, then spawns the real agent and asserts it can read a marker that exists only
+inside the attachment — plus that a silent `/context` leaves the transcript untouched.
 
 ```bash
 npm run typecheck

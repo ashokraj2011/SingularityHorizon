@@ -73,12 +73,9 @@ async function main(): Promise<void> {
   log('models', snapshot.models.length, '| config options', snapshot.configOptions.length)
   log('commands advertised', snapshot.commands.length)
 
-  await session.prompt([
-    {
-      type: 'text',
-      text: 'Use a shell command to append a line reading "goodbye" to greeting.txt in the current directory. Then tell me the final contents.'
-    }
-  ])
+  await session.prompt({
+    text: 'Use a shell command to append a line reading "goodbye" to greeting.txt in the current directory. Then tell me the final contents.'
+  })
 
   clearTimeout(timer)
 

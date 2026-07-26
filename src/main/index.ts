@@ -4,9 +4,9 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import type { ContentBlock } from '../shared/acp'
-import type { DirEntry, InvokedSkill, MainEvent } from '../shared/ipc'
+import type { DirEntry, MainEvent, PromptRequest } from '../shared/ipc'
 import { availableAgents } from './agents'
+import { statPaths } from './attachments'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
 
@@ -85,14 +85,22 @@ handle('sessions:create', (opts: { cwd: string; agentId: string }) =>
   manager.create(opts.cwd, opts.agentId)
 )
 handle('sessions:close', (sessionId: string) => manager.close(sessionId))
-handle(
-  'sessions:prompt',
-  (
-    sessionId: string,
-    content: ContentBlock[],
-    display?: { text: string; skill?: InvokedSkill }
-  ) => manager.prompt(sessionId, content, display)
+handle('sessions:prompt', (sessionId: string, request: PromptRequest) =>
+  manager.prompt(sessionId, request)
 )
+handle('sessions:restart', (sessionId: string) => manager.restart(sessionId))
+handle('sessions:runCommandSilent', (sessionId: string, command: string) =>
+  manager.runCommandSilent(sessionId, command)
+)
+handle('sessions:refreshContext', (sessionId: string) => manager.refreshContext(sessionId))
+handle('fs:statPaths', (paths: string[]) => statPaths(paths))
+handle('dialog:pickFiles', async () => {
+  if (!mainWindow) return []
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections']
+  })
+  return res.canceled ? [] : res.filePaths
+})
 handle('skills:list', (cwd: string) => listSkills(cwd))
 handle('skills:expand', (cwd: string, name: string, args: string) =>
   expandSkill(cwd, name, args)

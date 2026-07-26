@@ -17,12 +17,14 @@ import {
 } from '../../shared/acp'
 import type {
   AgentDefinition,
-  InvokedSkill,
   MainEvent,
   PendingPermission,
+  PromptRequest,
   SessionSnapshot,
   ThreadBlock
 } from '../../shared/ipc'
+import { parseContext, parseUsage } from '../../shared/contextInfo'
+import { buildAttachments } from '../attachments'
 import { RpcPeer } from './jsonrpc'
 import { TerminalManager } from './terminals'
 import { readTextFile, writeTextFile } from './workspaceFs'
@@ -51,6 +53,10 @@ export class AgentSession extends EventEmitter {
   private dirty = false
   private disposed = false
   private stderrTail = ''
+  /** Serializes prompt turns against silent command runs. */
+  private queue: Promise<unknown> = Promise.resolve()
+  /** When set, streamed output is captured here instead of the transcript. */
+  private capture: { text: string } | null = null
 
   private snapshot: SessionSnapshot
 
@@ -160,47 +166,118 @@ export class AgentSession extends EventEmitter {
   /* ---------------------------------------------------------------- verbs */
 
   /**
-   * `display` lets a caller show something shorter than what is sent — a skill
-   * invocation expands to a whole SKILL.md, and pasting that into the
-   * transcript would bury the conversation. The block records the expansion
-   * size so the substitution stays visible rather than hidden.
+   * Serializes everything that issues a `session/prompt`. A silent `/context`
+   * refresh and a real user turn share one agent and one notification stream —
+   * if they overlap, the refresh's output lands in the user's transcript and the
+   * turn's output lands in the capture buffer. The queue makes that impossible.
    */
-  async prompt(
-    content: ContentBlock[],
-    display?: { text: string; skill?: InvokedSkill }
-  ): Promise<void> {
-    const acpSessionId = this.snapshot.acpSessionId
-    if (!this.peer || !acpSessionId) throw new Error('Session is not ready')
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(fn, fn)
+    this.queue = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
 
-    const text =
-      display?.text ??
-      content
-        .filter((c): c is Extract<ContentBlock, { type: 'text' }> => c.type === 'text')
-        .map((c) => c.text)
-        .join('\n')
-    this.pushBlock({ kind: 'user', text, skill: display?.skill })
-    this.patch({ status: 'busy' })
+  /**
+   * `displayText` lets a caller show something shorter than what is sent — a
+   * skill invocation expands to a whole SKILL.md, and pasting that into the
+   * transcript would bury the conversation. The block records the substitution
+   * so it stays visible rather than hidden.
+   */
+  prompt(request: PromptRequest): Promise<void> {
+    return this.enqueue(async () => {
+      const acpSessionId = this.snapshot.acpSessionId
+      if (!this.peer || !acpSessionId) throw new Error('Session is not ready')
 
-    try {
-      const res = await this.peer.request<PromptResponse>('session/prompt', {
-        sessionId: acpSessionId,
-        prompt: content
-      })
-      this.finalizeStreamingBlocks()
-      this.patch({ status: 'idle' })
-      this.emitEvent({
-        type: 'session:turnEnded',
-        sessionId: this.id,
-        stopReason: res?.stopReason ?? 'end_turn'
-      })
-    } catch (err) {
-      this.finalizeStreamingBlocks()
+      const built = request.attachments?.length
+        ? await buildAttachments(request.attachments, this.cwd)
+        : { blocks: [], summaries: [] }
+
+      // Attachments lead so the model has the context before the instruction.
+      const content: ContentBlock[] = [
+        ...built.blocks,
+        { type: 'text', text: request.text }
+      ]
+
       this.pushBlock({
-        kind: 'notice',
-        level: 'error',
-        text: `Prompt failed: ${(err as Error).message}`
+        kind: 'user',
+        text: request.displayText ?? request.text,
+        skill: request.skill,
+        attachments: built.summaries.length ? built.summaries : undefined
       })
-      this.patch({ status: this.snapshot.status === 'exited' ? 'exited' : 'idle' })
+      this.patch({ status: 'busy' })
+
+      try {
+        const res = await this.peer.request<PromptResponse>('session/prompt', {
+          sessionId: acpSessionId,
+          prompt: content
+        })
+        this.finalizeStreamingBlocks()
+        this.flushNow()
+        this.patch({ status: 'idle' })
+        this.emitEvent({
+          type: 'session:turnEnded',
+          sessionId: this.id,
+          stopReason: res?.stopReason ?? 'end_turn'
+        })
+      } catch (err) {
+        this.finalizeStreamingBlocks()
+        this.pushBlock({
+          kind: 'notice',
+          level: 'error',
+          text: `Prompt failed: ${(err as Error).message}`
+        })
+        this.flushNow()
+        this.patch({ status: this.snapshot.status === 'exited' ? 'exited' : 'idle' })
+      }
+    })
+  }
+
+  /**
+   * Runs a slash command and returns its text without touching the transcript.
+   *
+   * Needed because Copilot exposes token accounting only through `/context` and
+   * `/usage` — it never sends ACP's `usage_update`. Those are local commands
+   * that cost no AI units, so polling them after each turn is cheap.
+   */
+  runCommandSilent(command: string): Promise<string> {
+    return this.enqueue(async () => {
+      const acpSessionId = this.snapshot.acpSessionId
+      if (!this.peer || !acpSessionId) throw new Error('Session is not ready')
+
+      // Deliver anything still pending before muting the stream, so a prior
+      // turn's tail can't be swallowed by the capture guard.
+      this.flushNow()
+      this.capture = { text: '' }
+      try {
+        await this.peer.request<PromptResponse>('session/prompt', {
+          sessionId: acpSessionId,
+          prompt: [{ type: 'text', text: command }]
+        })
+        return this.capture.text
+      } finally {
+        this.capture = null
+      }
+    })
+  }
+
+  /** Refreshes the context meter. Failures are non-fatal and leave it as-is. */
+  async refreshContext(): Promise<void> {
+    try {
+      const contextText = await this.runCommandSilent('/context')
+      const context = parseContext(contextText)
+      if (context) this.patch({ context })
+    } catch {
+      /* meter simply doesn't update */
+    }
+    try {
+      const usageText = await this.runCommandSilent('/usage')
+      const usage = parseUsage(usageText)
+      if (usage) this.patch({ usage })
+    } catch {
+      /* ignore */
     }
   }
 
@@ -341,6 +418,23 @@ export class AgentSession extends EventEmitter {
   /* ------------------------------------------------------- update folding */
 
   private applyUpdate(update: SessionUpdate): void {
+    // While capturing, the transcript must stay untouched — including tool
+    // calls and plans, so a command that unexpectedly uses a tool can't leave
+    // orphaned cards behind. Config and command advertisements still apply,
+    // since those are session state rather than conversation.
+    if (this.capture) {
+      if (update.sessionUpdate === 'agent_message_chunk') {
+        this.capture.text += textOf((update as any).content)
+        return
+      }
+      if (
+        update.sessionUpdate !== 'available_commands_update' &&
+        update.sessionUpdate !== 'config_option_update'
+      ) {
+        return
+      }
+    }
+
     switch (update.sessionUpdate) {
       case 'agent_message_chunk':
         this.appendStream('assistant', textOf((update as any).content))
@@ -482,6 +576,24 @@ export class AgentSession extends EventEmitter {
 
   private fail(message: string): void {
     this.patch({ status: 'error', lastError: message })
+  }
+
+  /**
+   * Delivers pending block updates immediately, bypassing the batch timer.
+   *
+   * Called at turn boundaries. Status patches emit synchronously while blocks
+   * wait for the next tick, so without this the turn reports `idle` up to one
+   * interval before its own final message chunk arrives — anything reading
+   * state right after `prompt()` resolves would see a truncated transcript.
+   */
+  private flushNow(): void {
+    if (!this.dirty) return
+    this.dirty = false
+    this.emitEvent({
+      type: 'session:blocks',
+      sessionId: this.id,
+      blocks: this.snapshot.blocks
+    })
   }
 
   /**

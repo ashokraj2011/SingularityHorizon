@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 import type { AcpStudioApi, MainEvent } from '../shared/ipc'
-import type { ContentBlock } from '../shared/acp'
 
 /**
  * The renderer never touches Node or Electron directly — this is the entire
@@ -13,10 +12,15 @@ const api: AcpStudioApi = {
   listSessions: () => ipcRenderer.invoke('sessions:list'),
   createSession: (opts) => ipcRenderer.invoke('sessions:create', opts),
   closeSession: (sessionId) => ipcRenderer.invoke('sessions:close', sessionId),
-  prompt: (sessionId, content: ContentBlock[], display) =>
-    ipcRenderer.invoke('sessions:prompt', sessionId, content, display),
+  restartSession: (sessionId) => ipcRenderer.invoke('sessions:restart', sessionId),
+  prompt: (sessionId, request) => ipcRenderer.invoke('sessions:prompt', sessionId, request),
+  runCommandSilent: (sessionId, command) =>
+    ipcRenderer.invoke('sessions:runCommandSilent', sessionId, command),
+  refreshContext: (sessionId) => ipcRenderer.invoke('sessions:refreshContext', sessionId),
   listSkills: (cwd) => ipcRenderer.invoke('skills:list', cwd),
   expandSkill: (cwd, name, args) => ipcRenderer.invoke('skills:expand', cwd, name, args),
+  pickFiles: () => ipcRenderer.invoke('dialog:pickFiles'),
+  statPaths: (paths) => ipcRenderer.invoke('fs:statPaths', paths),
   cancel: (sessionId) => ipcRenderer.invoke('sessions:cancel', sessionId),
   respondPermission: (requestId, optionId) =>
     ipcRenderer.invoke('permissions:respond', requestId, optionId),

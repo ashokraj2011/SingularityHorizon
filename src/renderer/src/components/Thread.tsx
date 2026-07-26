@@ -52,6 +52,31 @@ function Block({ block }: { block: ThreadBlock }): React.JSX.Element | null {
     case 'user':
       return (
         <div className="block-user">
+          {block.attachments && block.attachments.length > 0 && (
+            <div className="chips sent">
+              {block.attachments.map((a) => (
+                <span
+                  key={a.path}
+                  className={`chip ${a.error ? 'bad' : ''}`}
+                  title={a.error ?? a.path}
+                >
+                  <span className="chip-icon">{a.kind === 'folder' ? '▤' : '◫'}</span>
+                  <span className="chip-name">{a.name}</span>
+                  <span className="chip-meta">
+                    {a.error
+                      ? 'failed'
+                      : a.kind === 'folder'
+                        ? `${a.entryCount ?? 0} entries${a.truncated ? '+' : ''}`
+                        : a.binary
+                          ? 'by reference'
+                          : a.truncated
+                            ? 'truncated'
+                            : 'embedded'}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
           {block.text}
           {block.skill && (
             <div className="skill-chip" title={`Loaded from ${block.skill.source}`}>

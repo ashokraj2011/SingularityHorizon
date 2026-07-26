@@ -816,6 +816,340 @@ textarea {
   letter-spacing: 0.01em;
 }
 
+/* ------------------------------------------------- composer bar controls */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.attach-wrap,
+.menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.attach-menu,
+.drop {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 0;
+  min-width: 210px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  padding: 5px;
+  z-index: 40;
+}
+
+/* The session menu hangs off the top bar, so it opens downward. */
+.menu-wrap .drop {
+  top: calc(100% + 7px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+}
+
+.drop-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  padding: 6px 9px 3px;
+  font-weight: 600;
+}
+
+.drop-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 0;
+}
+
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ------------------------------------------------------ attachment chips */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 0;
+}
+
+.chips.sent {
+  padding: 0 0 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.chip.bad {
+  border-color: var(--accent-dim);
+  color: var(--red);
+}
+
+.chip-icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-meta {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.chip-x {
+  color: var(--text-faint);
+  padding: 0 3px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.chip-x:hover {
+  color: var(--text);
+  background: var(--border);
+}
+
+.chips.sent .chip {
+  background: none;
+}
+
+/* ------------------------------------------------------------ context meter */
+
+.meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.meter:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.meter-bar {
+  width: 48px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--green);
+  transition: width 0.3s ease;
+}
+
+.meter-fill.warm {
+  background: var(--yellow);
+}
+
+.meter-fill.hot {
+  background: var(--red);
+}
+
+.meter-label {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* -------------------------------------------------------------- overlay */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 40px;
+}
+
+.sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sheet-body {
+  padding: 14px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.sheet-row-head {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-bottom: 9px;
+}
+
+.sheet-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 18px 0 14px;
+}
+
+.sheet-empty {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  line-height: 1.55;
+}
+
+.stack {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-inset);
+  margin-bottom: 12px;
+}
+
+.stack-seg {
+  display: contents;
+}
+
+.seg {
+  display: block;
+  height: 100%;
+}
+
+/* Distinct hues per slice so the bar and the table read as one figure. */
+.seg.system-prompt,
+.swatch.system-prompt {
+  background: #6a9bd1;
+}
+.seg.system-tools,
+.swatch.system-tools {
+  background: #7fb2a6;
+}
+.seg.mcp-tools,
+.swatch.mcp-tools {
+  background: #b58cc4;
+}
+.seg.messages,
+.swatch.messages {
+  background: var(--accent);
+}
+.seg.free-space,
+.swatch.free-space {
+  background: #2e2b29;
+}
+.seg.buffer,
+.swatch.buffer {
+  background: #3d3a37;
+}
+
+.swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 8px;
+  background: var(--border-strong);
+}
+
+.ctx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.ctx-table td {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.ctx-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ctx-table .num {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  width: 78px;
+}
+
+.ctx-table .num.dim {
+  color: var(--text-faint);
+  width: 52px;
+}
+
 /* ------------------------------------------------------------- empty view */
 
 .empty {

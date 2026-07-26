@@ -1,7 +1,13 @@
 import { create } from 'zustand'
 
 import type { ContentBlock } from '@shared/acp'
-import type { AgentDefinition, MainEvent, SessionSnapshot, SkillInfo } from '@shared/ipc'
+import type {
+  AgentDefinition,
+  AttachmentSummary,
+  MainEvent,
+  SessionSnapshot,
+  SkillInfo
+} from '@shared/ipc'
 import { resolveSkillInvocation } from './slashMenu'
 
 interface StoreState {
@@ -11,9 +17,16 @@ interface StoreState {
   agents: AgentDefinition[]
   /** Locally-loaded skills, per session — the agent does not advertise these. */
   skills: Record<string, SkillInfo[]>
+  /** Staged attachments, per session, cleared when a prompt is sent. */
+  attachments: Record<string, AttachmentSummary[]>
   launching: boolean
   launchError: string | null
   loadSkills: (sessionId: string) => Promise<void>
+  addAttachments: (kind: 'file' | 'folder') => Promise<void>
+  removeAttachment: (path: string) => void
+  refreshContext: () => Promise<void>
+  restartSession: () => Promise<void>
+  runCommand: (command: string) => Promise<void>
 
   bootstrap: () => Promise<void>
   applyEvent: (event: MainEvent) => void
@@ -22,7 +35,7 @@ interface StoreState {
   setActive: (id: string) => void
   send: (text: string) => Promise<void>
   cancel: () => void
-  setConfigOption: (optionId: string, value: string) => Promise<void>
+  setConfigOption: (optionId: string, value: string, sessionId?: string) => Promise<void>
   answerPermission: (requestId: string, optionId: string | null) => Promise<void>
 }
 
@@ -32,6 +45,7 @@ export const useStore = create<StoreState>((set, get) => ({
   activeId: null,
   agents: [],
   skills: {},
+  attachments: {},
   launching: false,
   launchError: null,
 
@@ -97,12 +111,22 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       case 'session:removed': {
         const { [event.sessionId]: _removed, ...rest } = state.sessions
+        const { [event.sessionId]: _skills, ...restSkills } = state.skills
+        const { [event.sessionId]: _atts, ...restAtts } = state.attachments
         const order = state.order.filter((id) => id !== event.sessionId)
         set({
           sessions: rest,
+          skills: restSkills,
+          attachments: restAtts,
           order,
           activeId: state.activeId === event.sessionId ? (order[0] ?? null) : state.activeId
         })
+        return
+      }
+      case 'session:turnEnded': {
+        // Copilot never pushes token usage, so the meter is refreshed by
+        // running /context and /usage once the turn releases the agent.
+        void window.acp.refreshContext(event.sessionId).catch(() => {})
         return
       }
       default:
@@ -133,6 +157,11 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!activeId || !text.trim()) return
     const session = state.sessions[activeId]
 
+    const attachments = (state.attachments[activeId] ?? []).map((a) => ({
+      path: a.path,
+      kind: a.kind
+    }))
+
     // A leading /name that matches a locally-loaded skill is expanded here.
     // Uses the same resolver as the menu so the two can never disagree about
     // who owns a name.
@@ -150,8 +179,11 @@ export const useStore = create<StoreState>((set, get) => ({
             skill.name,
             args
           )
-          await window.acp.prompt(activeId, [{ type: 'text', text: expanded }], {
-            text: text.trim(),
+          set({ attachments: { ...get().attachments, [activeId]: [] } })
+          await window.acp.prompt(activeId, {
+            text: expanded,
+            attachments,
+            displayText: text.trim(),
             skill: {
               name: skill.name,
               source: skill.source,
@@ -166,8 +198,64 @@ export const useStore = create<StoreState>((set, get) => ({
       }
     }
 
-    const content: ContentBlock[] = [{ type: 'text', text }]
-    await window.acp.prompt(activeId, content)
+    set({ attachments: { ...get().attachments, [activeId]: [] } })
+    await window.acp.prompt(activeId, { text, attachments })
+  },
+
+  /* ------------------------------------------------------------ attachments */
+
+  addAttachments: async (kind) => {
+    const { activeId } = get()
+    if (!activeId) return
+    const paths =
+      kind === 'file'
+        ? await window.acp.pickFiles()
+        : await window.acp.pickDirectory().then((d) => (d ? [d] : []))
+    if (!paths.length) return
+
+    const summaries = await window.acp.statPaths(paths)
+    const existing = get().attachments[activeId] ?? []
+    const seen = new Set(existing.map((a) => a.path))
+    set({
+      attachments: {
+        ...get().attachments,
+        [activeId]: [...existing, ...summaries.filter((s) => !seen.has(s.path))]
+      }
+    })
+  },
+
+  removeAttachment: (path) => {
+    const { activeId, attachments } = get()
+    if (!activeId) return
+    set({
+      attachments: {
+        ...attachments,
+        [activeId]: (attachments[activeId] ?? []).filter((a) => a.path !== path)
+      }
+    })
+  },
+
+  /* -------------------------------------------------------- session actions */
+
+  refreshContext: async () => {
+    const { activeId } = get()
+    if (!activeId) return
+    await window.acp.refreshContext(activeId)
+  },
+
+  restartSession: async () => {
+    const { activeId } = get()
+    if (!activeId) return
+    await window.acp.restartSession(activeId)
+  },
+
+  runCommand: async (command) => {
+    const { activeId } = get()
+    if (!activeId) return
+    // Visible commands go through the normal prompt path so their output lands
+    // in the transcript — /compact and /memory changes are real operations the
+    // user should see a record of.
+    await window.acp.prompt(activeId, { text: command })
   },
 
   cancel: () => {
@@ -175,10 +263,10 @@ export const useStore = create<StoreState>((set, get) => ({
     if (activeId) void window.acp.cancel(activeId)
   },
 
-  setConfigOption: async (optionId, value) => {
-    const { activeId } = get()
-    if (!activeId) return
-    await window.acp.setConfigOption(activeId, optionId, value)
+  setConfigOption: async (optionId, value, sessionId) => {
+    const target = sessionId ?? get().activeId
+    if (!target) return
+    await window.acp.setConfigOption(target, optionId, value)
   },
 
   answerPermission: async (requestId, optionId) => {

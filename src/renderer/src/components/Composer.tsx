@@ -1,11 +1,21 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { SessionSnapshot, SkillInfo } from '@shared/ipc'
+import type { AttachmentSummary, SessionSnapshot, SkillInfo } from '@shared/ipc'
 import { useStore } from '../store'
 import { buildSlashItems, type SlashItem } from '../slashMenu'
+import { ConfigPicker } from './ConfigPicker'
 
-/** Stable reference — a fresh [] each render would loop the selector. */
+/** Stable references — a fresh [] each render would loop the selector. */
 const EMPTY_SKILLS: SkillInfo[] = []
+const EMPTY_ATTACHMENTS: AttachmentSummary[] = []
+
+/** Which agent options appear in the composer bar, and in what order. */
+const BAR_OPTIONS: Array<{ id: string; prefix?: string }> = [
+  { id: 'mode' },
+  { id: 'model' },
+  { id: 'reasoning_effort', prefix: 'effort: ' },
+  { id: 'agent' }
+]
 
 type MenuItem = SlashItem
 
@@ -17,6 +27,22 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
   const send = useStore((s) => s.send)
   const cancel = useStore((s) => s.cancel)
   const skills = useStore((s) => s.skills[session.id] ?? EMPTY_SKILLS)
+  const attachments = useStore((s) => s.attachments[session.id] ?? EMPTY_ATTACHMENTS)
+  const addAttachments = useStore((s) => s.addAttachments)
+  const removeAttachment = useStore((s) => s.removeAttachment)
+  const [attachOpen, setAttachOpen] = useState(false)
+  const attachRef = useRef<HTMLDivElement>(null)
+
+  // Dismiss the attach menu on any outside click, so it can't be left hanging
+  // over the transcript.
+  useEffect(() => {
+    if (!attachOpen) return
+    const onDown = (e: MouseEvent): void => {
+      if (!attachRef.current?.contains(e.target as Node)) setAttachOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [attachOpen])
 
   const busy = session.status === 'busy'
   const disabled = session.status === 'starting' || session.status === 'error' ||
@@ -140,6 +166,31 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
           </div>
         )}
 
+        {attachments.length > 0 && (
+          <div className="chips">
+            {attachments.map((a) => (
+              <span
+                key={a.path}
+                className={`chip ${a.error ? 'bad' : ''}`}
+                title={a.error ? `${a.path}\n${a.error}` : a.path}
+              >
+                <span className="chip-icon">{a.kind === 'folder' ? '▤' : '◫'}</span>
+                <span className="chip-name">{a.name}</span>
+                {a.bytes !== undefined && (
+                  <span className="chip-meta">{formatBytes(a.bytes)}</span>
+                )}
+                <button
+                  className="chip-x"
+                  title="Remove"
+                  onClick={() => removeAttachment(a.path)}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           rows={1}
@@ -155,16 +206,67 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
         />
 
         <div className="composer-bar">
-          <span className="hint">
-            {busy ? 'Running — Esc to interrupt' : 'Enter to send · Shift+Enter for newline'}
-          </span>
+          <div className="attach-wrap" ref={attachRef}>
+            <button
+              className="icon-btn"
+              title="Attach files or a folder"
+              disabled={disabled}
+              onClick={() => setAttachOpen((v) => !v)}
+            >
+              +
+            </button>
+            {attachOpen && (
+              <div className="attach-menu">
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    setAttachOpen(false)
+                    void addAttachments('file')
+                  }}
+                >
+                  <span className="chip-icon">◫</span> Add files…
+                </button>
+                <button
+                  className="menu-item"
+                  onClick={() => {
+                    setAttachOpen(false)
+                    void addAttachments('folder')
+                  }}
+                >
+                  <span className="chip-icon">▤</span> Add folder…
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Agent-declared options, rendered in a deliberate reading order.
+              Data-driven: an option the agent stops declaring just disappears. */}
+          {BAR_OPTIONS.map(({ id, prefix }) => {
+            const option = session.configOptions.find((o) => o.id === id)
+            return option ? (
+              <ConfigPicker
+                key={id}
+                option={option}
+                sessionId={session.id}
+                prefix={prefix}
+              />
+            ) : null
+          })}
+
           <span className="spacer" />
+          <span className="hint">
+            {busy ? 'Esc to interrupt' : 'Enter to send · ⇧Enter newline'}
+          </span>
           {busy ? (
             <button className="btn" onClick={cancel}>
               Stop
             </button>
           ) : (
-            <button className="btn primary" onClick={submit} disabled={!text.trim() || disabled}>
+            <button
+              className="btn primary"
+              onClick={submit}
+              disabled={(!text.trim() && attachments.length === 0) || disabled}
+            >
               Send
             </button>
           )}
@@ -172,6 +274,12 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
       </div>
     </div>
   )
+}
+
+function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}MB`
+  if (n >= 1024) return `${Math.round(n / 1024)}KB`
+  return `${n}B`
 }
 
 /**
