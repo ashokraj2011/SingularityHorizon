@@ -20,6 +20,7 @@ import {
   registeredProviders
 } from '../src/main/providers/registry'
 import { singularityFlowProvider } from '../src/main/providers/singularityFlow'
+import { availableProviderIds, loadProvidersFromEnv } from '../src/main/providers/load'
 import type { WorkspaceProvider } from '../src/main/providers/types'
 import { discoverRepo } from '../src/main/repo'
 
@@ -127,6 +128,32 @@ const unregister = registerProvider({ id: 'y', name: 'Y', detect: async () => nu
 ok('two providers registered', registeredProviders().length === 2)
 unregister()
 ok('unregister removes exactly one', registeredProviders().length === 1)
+
+clearProviders()
+
+/* -------------------------------- 5. env-driven opt-in loading */
+
+clearProviders()
+ok('no providers loaded when the env var is unset',
+   (await loadProvidersFromEnv(undefined)).length === 0 && registeredProviders().length === 0)
+
+clearProviders()
+ok('empty env var loads nothing', (await loadProvidersFromEnv('')).length === 0)
+
+clearProviders()
+const loadedIds = await loadProvidersFromEnv('singularity-flow')
+ok('named provider loads on request', loadedIds.includes('singularity-flow'), loadedIds.join(','))
+ok('and lands in the registry', registeredProviders().some((p) => p.id === 'singularity-flow'))
+
+clearProviders()
+const mixed = await loadProvidersFromEnv('singularity-flow, not-a-real-provider')
+ok('unknown id is skipped, known one still loads',
+   mixed.length === 1 && mixed[0] === 'singularity-flow', mixed.join(','))
+
+clearProviders()
+ok('unknown id alone does not throw', (await loadProvidersFromEnv('nope')).length === 0)
+ok('singularity-flow is advertised as available',
+   availableProviderIds().includes('singularity-flow'))
 
 clearProviders()
 

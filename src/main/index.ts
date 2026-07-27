@@ -9,6 +9,7 @@ import { availableAgents, TOOL_PROFILES } from './agents'
 import { indexFor } from './ast/astIndex'
 import { extractSymbol } from './ast/outline'
 import { statPaths } from './attachments'
+import { loadProvidersFromEnv } from './providers/load'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
@@ -232,7 +233,13 @@ handle('fs:searchFiles', async (root: string, query: string): Promise<string[]> 
 
 /* --------------------------------------------------------------- lifecycle */
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Opt-in only: standalone loads nothing. A host that embeds this verbatim
+  // activates its integration through EVENT_HORIZON_PROVIDERS rather than by
+  // editing this file, which would make its copy a fork.
+  const loaded = await loadProvidersFromEnv()
+  if (loaded.length) console.log(`[providers] registered: ${loaded.join(', ')}`)
+
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
