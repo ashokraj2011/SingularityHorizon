@@ -40,6 +40,7 @@ export { discoverRepo, ensureAstIgnored } from './repo'
 export {
   registerEventHorizonHandlers,
   openEventHorizonWindow,
+  activateWorkspace,
   eventHorizonStatus,
   setHostContext,
   getHostContext,

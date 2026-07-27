@@ -134,6 +134,12 @@ export const useStore = create<StoreState>((set, get) => ({
         })
         return
       }
+      case 'session:activate': {
+        // Only focus a session we actually know about; the event may arrive
+        // before session:created on a cold open.
+        if (state.sessions[event.sessionId]) set({ activeId: event.sessionId })
+        return
+      }
       case 'host:context': {
         set({ hostContexts: { ...state.hostContexts, [event.cwd]: event.context } })
         return

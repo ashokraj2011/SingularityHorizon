@@ -13,6 +13,7 @@ import { startStandalone } from './app'
 export {
   registerEventHorizonHandlers,
   openEventHorizonWindow,
+  activateWorkspace,
   eventHorizonStatus,
   setHostContext,
   getHostContext,

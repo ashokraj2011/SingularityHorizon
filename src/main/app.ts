@@ -295,6 +295,10 @@ export interface OpenWindowOptions {
   hostContext?: unknown
   /** Focus an existing window instead of opening a second one. */
   reuse?: boolean
+  /** Agent to use if `cwd` needs a new session. Defaults to copilot. */
+  agentId?: string
+  /** Tool profile for a newly created session. */
+  toolProfile?: string
 }
 
 /**
@@ -308,13 +312,47 @@ export function openEventHorizonWindow(options: OpenWindowOptions = {}): Browser
   registerEventHorizonHandlers()
   if (options.cwd) setHostContext(options.cwd, options.hostContext)
 
-  if (options.reuse !== false && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.show()
-    mainWindow.focus()
-    return mainWindow
+  const reusing = options.reuse !== false && mainWindow && !mainWindow.isDestroyed()
+  if (reusing) {
+    mainWindow!.show()
+    mainWindow!.focus()
+  } else {
+    createWindow()
   }
-  createWindow()
+
+  if (options.cwd) void activateWorkspace(options.cwd, options)
   return mainWindow!
+}
+
+/**
+ * Focuses the session for a directory, creating one only if none exists.
+ *
+ * A host that hands the same repository over twice means "show me that work",
+ * not "start again" — spawning a second agent would silently fork the
+ * conversation and double the process count. Existing sessions are matched on
+ * the resolved cwd so a symlinked path does not read as a different repo.
+ */
+export async function activateWorkspace(
+  cwd: string,
+  options: { agentId?: string; toolProfile?: string } = {}
+): Promise<SessionSnapshot | null> {
+  registerEventHorizonHandlers()
+  const target = resolve(cwd)
+
+  const existing = manager.list().find((s) => resolve(s.cwd) === target)
+  if (existing) {
+    broadcast({ type: 'session:activate', sessionId: existing.id })
+    return existing
+  }
+
+  try {
+    const created = await manager.create(target, options.agentId ?? 'copilot', options.toolProfile)
+    broadcast({ type: 'session:activate', sessionId: created.id })
+    return created
+  } catch (err) {
+    console.error('[event-horizon] failed to activate workspace:', (err as Error).message)
+    return null
+  }
 }
 
 export interface EventHorizonStatus {

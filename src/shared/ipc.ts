@@ -251,6 +251,8 @@ export type MainEvent =
    * core — only the host's own UI slot knows how to read it.
    */
   | { type: 'host:context'; cwd: string; context: unknown }
+  /** Focus this session — a host handed us its directory. */
+  | { type: 'session:activate'; sessionId: string }
 
 /* ------------------------------------------------------------- fs types */
 
