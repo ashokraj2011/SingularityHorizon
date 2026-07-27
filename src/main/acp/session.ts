@@ -17,6 +17,7 @@ import {
 } from '../../shared/acp'
 import type {
   AgentDefinition,
+  ContextDocument,
   MainEvent,
   PendingPermission,
   PromptRequest,
@@ -26,6 +27,7 @@ import type {
 import { parseContext, parseUsage } from '../../shared/contextInfo'
 import { indexFor } from '../ast/astIndex'
 import { buildAttachments } from '../attachments'
+import { renderContextDocuments } from '../contextDocuments'
 import { RpcPeer } from './jsonrpc'
 import { TerminalManager } from './terminals'
 import { readTextFile, writeTextFile } from './workspaceFs'
@@ -58,13 +60,16 @@ export class AgentSession extends EventEmitter {
   private queue: Promise<unknown> = Promise.resolve()
   /** When set, streamed output is captured here instead of the transcript. */
   private capture: { text: string } | null = null
+  private contextPending = true
+  private readonly contextDocuments: ContextDocument[]
 
   private snapshot: SessionSnapshot
 
-  constructor(agent: AgentDefinition, cwd: string) {
+  constructor(agent: AgentDefinition, cwd: string, contextDocuments: ContextDocument[] = []) {
     super()
     this.agent = agent
     this.cwd = cwd
+    this.contextDocuments = contextDocuments.filter((document) => document.text.trim())
     this.snapshot = {
       id: this.id,
       title: basename(cwd) || cwd,
@@ -76,7 +81,13 @@ export class AgentSession extends EventEmitter {
       blocks: [],
       models: [],
       configOptions: [],
-      commands: []
+      commands: [],
+      contextDocuments: this.contextDocuments.map(({ providerId, title, kind, reason }) => ({
+        providerId,
+        title,
+        kind: kind ?? 'evidence',
+        reason
+      }))
     }
   }
 
@@ -198,8 +209,10 @@ export class AgentSession extends EventEmitter {
         : { blocks: [], summaries: [] }
 
       // Attachments lead so the model has the context before the instruction.
+      const initialContext = this.contextPending ? renderContextDocuments(this.contextDocuments) : null
       const content: ContentBlock[] = [
         ...built.blocks,
+        ...(initialContext ? [{ type: 'text' as const, text: initialContext }] : []),
         { type: 'text', text: request.text }
       ]
 
@@ -216,6 +229,7 @@ export class AgentSession extends EventEmitter {
           sessionId: acpSessionId,
           prompt: content
         })
+        if (initialContext) this.contextPending = false
         this.finalizeStreamingBlocks()
         this.flushNow()
         this.patch({ status: 'idle' })

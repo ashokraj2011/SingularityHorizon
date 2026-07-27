@@ -129,6 +129,8 @@ export interface SessionSnapshot extends SessionSummary {
   agentName?: string
   agentVersion?: string
   lastError?: string
+  /** Provider context injected once with the first real user turn. */
+  contextDocuments?: Array<Pick<ContextDocument, 'providerId' | 'title' | 'kind' | 'reason'>>
 }
 
 export interface PromptRequest {
@@ -187,6 +189,8 @@ export interface ContextDocument {
   /** Absolute path when it came from disk; absent for generated content. */
   path?: string
   text: string
+  /** Instructions guide the agent; evidence remains untrusted reference material. */
+  kind?: 'instructions' | 'evidence'
   /** Why this is being injected, shown to the user before it is sent. */
   reason?: string
 }

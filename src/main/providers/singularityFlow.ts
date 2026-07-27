@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, readdir, readFile } from 'node:fs/promises'
+import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -35,6 +35,13 @@ export interface SingularityFlowOptions {
   timeoutMs?: number
 }
 
+interface FlowContextHint {
+  id: string
+  phase?: string
+  persona?: string
+  kind: 'work-item' | 'initiative'
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await access(path)
@@ -67,16 +74,18 @@ export function singularityFlowProvider(
     async detect(root: string): Promise<ProviderStatus | null> {
       const version = (await run(root, ['--version']))?.trim().split('\n').pop()?.trim()
       const workItemsDir = join(root, 'singularity', 'work-items')
+      const initiativesDir = join(root, 'singularity', 'initiatives')
       const hasWorkItems = await exists(workItemsDir)
+      const hasInitiatives = await exists(initiativesDir)
 
       // Neither the CLI nor the directory: this repo simply isn't a Flow repo.
-      if (!version && !hasWorkItems) return null
+      if (!version && !hasWorkItems && !hasInitiatives) return null
 
       // `wm check` exits non-zero when the model is missing or stale — a more
       // honest readiness signal than looking for files we would have to guess.
       const worldModelReady = version ? (await run(root, ['wm', 'check'])) !== null : false
 
-      const active = hasWorkItems ? await activeWorkItem(workItemsDir) : null
+      const active = await activeFlowWork(workItemsDir, initiativesDir)
 
       return {
         id: 'singularity-flow',
@@ -89,7 +98,7 @@ export function singularityFlowProvider(
           : version
             ? 'no active work item'
             : 'CLI not found',
-        detail: { hasWorkItems, worldModelReady, workItemId: active?.id }
+        detail: { hasWorkItems, hasInitiatives, worldModelReady, workItemId: active?.id }
       }
     },
 
@@ -101,23 +110,46 @@ export function singularityFlowProvider(
     async contextDocuments(root, o): Promise<ContextDocument[]> {
       const docs: ContextDocument[] = []
       const workItemsDir = join(root, 'singularity', 'work-items')
-      const active = (await exists(workItemsDir)) ? await activeWorkItem(workItemsDir) : null
-      const phase = o?.phase ?? active?.phase
+      const initiativesDir = join(root, 'singularity', 'initiatives')
+      const hint = flowContextHint(o?.hostContext)
+      const active = hint
+        ? await exactFlowWork(workItemsDir, initiativesDir, hint)
+        : await activeFlowWork(workItemsDir, initiativesDir)
+      // A host-selected work ID is authoritative. Never silently ground the
+      // agent in a different, merely newer item when that exact state is gone.
+      if (hint && !active) return docs
+      const phase = o?.phase ?? hint?.phase ?? active?.phase
       if (!phase) return docs
 
-      const composed = await run(root, ['wm', 'compose', '--phase', phase])
+      const composed = active?.kind === 'initiative'
+        ? await run(root, [
+            'initiative', 'context', phase,
+            '--initiative', active.id,
+            ...(hint?.persona ? ['--persona', hint.persona] : []),
+            '--dry-run'
+          ])
+        : await run(root, [
+            'wm', 'compose', '--phase', phase,
+            ...(active?.id ? ['--work-id', active.id] : []),
+            ...(hint?.persona ? ['--persona', hint.persona] : []),
+            '--render-only'
+          ])
       if (composed?.trim()) {
         docs.push({
           providerId: 'singularity-flow',
-          title: `World model · ${phase}`,
+          title: `${active?.id ?? 'Repository'} · ${phase} agent contract`,
           text: composed.trim(),
-          reason: `Grounding for the ${phase} phase`
+          kind: 'instructions',
+          reason: `Persona, phase contract, and required world-model views for ${phase}`
         })
       }
 
       // Documents registered against the work item for this phase.
       if (active) {
-        const dir = join(workItemsDir, active.id)
+        const dir = join(
+          active.kind === 'initiative' ? initiativesDir : workItemsDir,
+          active.id
+        )
         for (const name of await safeReaddir(dir)) {
           if (!/handoff|summary|spec/i.test(name)) continue
           if (!/\.(md|markdown|txt)$/i.test(name)) continue
@@ -129,6 +161,7 @@ export function singularityFlowProvider(
                 title: `${active.id} · ${name}`,
                 path: join(dir, name),
                 text,
+                kind: 'evidence',
                 reason: 'Phase handoff document'
               })
             }
@@ -142,6 +175,31 @@ export function singularityFlowProvider(
   }
 }
 
+function flowContextHint(value: unknown): FlowContextHint | null {
+  if (!value || typeof value !== 'object') return null
+  const work = (value as { work?: unknown }).work
+  if (!work || typeof work !== 'object') return null
+  const candidate = work as Record<string, unknown>
+  if (typeof candidate.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(candidate.id)) {
+    return null
+  }
+  const kind = candidate.kind === 'epic'
+    ? 'initiative'
+    : candidate.kind === 'story'
+      ? 'work-item'
+      : null
+  if (!kind) return null
+  const persona = typeof (value as { persona?: unknown }).persona === 'string'
+    ? (value as { persona: string }).persona
+    : undefined
+  return {
+    id: candidate.id,
+    kind,
+    phase: typeof candidate.phase === 'string' ? candidate.phase : undefined,
+    persona
+  }
+}
+
 async function safeReaddir(dir: string): Promise<string[]> {
   try {
     return await readdir(dir)
@@ -150,33 +208,63 @@ async function safeReaddir(dir: string): Promise<string[]> {
   }
 }
 
-/**
- * `singularity/work-items/<WORK-ID>/workflow.json` is the lifecycle state.
- * The most recently modified one is treated as active, which matches how the
- * CLI is used in practice.
- */
-async function activeWorkItem(
-  workItemsDir: string
-): Promise<{ id: string; phase?: string } | null> {
-  const ids = await safeReaddir(workItemsDir)
-  let best: { id: string; phase?: string; mtime: number } | null = null
+async function exactFlowWork(
+  workItemsDir: string,
+  initiativesDir: string,
+  hint: FlowContextHint
+): Promise<{ id: string; phase?: string; kind: 'work-item' | 'initiative' } | null> {
+  const base = hint.kind === 'initiative' ? initiativesDir : workItemsDir
+  const candidates = hint.kind === 'initiative'
+    ? [join(base, hint.id, 'state.json')]
+    : [join(base, hint.id, 'state.json'), join(base, hint.id, 'workflow.json')]
+  if (!(await Promise.all(candidates.map(exists))).some(Boolean)) return null
+  return { id: hint.id, phase: hint.phase, kind: hint.kind }
+}
 
-  for (const id of ids) {
-    const file = join(workItemsDir, id, 'workflow.json')
+/**
+ * The most recently updated Flow state is used only as a fallback hint. The
+ * composed CLI context still validates the current phase and selected persona.
+ */
+async function activeFlowWork(
+  workItemsDir: string,
+  initiativesDir: string
+): Promise<{ id: string; phase?: string; kind: 'work-item' | 'initiative' } | null> {
+  let best: {
+    id: string
+    phase?: string
+    kind: 'work-item' | 'initiative'
+    mtime: number
+  } | null = null
+  const candidates = [
+    ...(await safeReaddir(workItemsDir)).flatMap((id) => [
+      { id, kind: 'work-item' as const, file: join(workItemsDir, id, 'state.json') },
+      { id, kind: 'work-item' as const, file: join(workItemsDir, id, 'workflow.json') }
+    ]),
+    ...(await safeReaddir(initiativesDir)).map((id) => ({
+      id,
+      kind: 'initiative' as const,
+      file: join(initiativesDir, id, 'state.json')
+    }))
+  ]
+  for (const candidate of candidates) {
     try {
-      const raw = await readFile(file, 'utf8')
+      const raw = await readFile(candidate.file, 'utf8')
       const parsed = JSON.parse(raw) as Record<string, unknown>
-      const phase =
-        typeof parsed.currentPhase === 'string'
-          ? parsed.currentPhase
+      const nested = (parsed.workflow ?? parsed.initiative) as Record<string, unknown> | undefined
+      const phase = typeof parsed.currentPhase === 'string'
+        ? parsed.currentPhase
+        : typeof nested?.currentPhase === 'string'
+          ? nested.currentPhase
           : typeof parsed.phase === 'string'
             ? parsed.phase
             : undefined
-      const { mtimeMs } = await import('node:fs/promises').then((m) => m.stat(file))
-      if (!best || mtimeMs > best.mtime) best = { id, phase, mtime: mtimeMs }
+      const { mtimeMs } = await stat(candidate.file)
+      if (!best || mtimeMs > best.mtime) {
+        best = { id: candidate.id, phase, kind: candidate.kind, mtime: mtimeMs }
+      }
     } catch {
-      /* not a work item */
+      /* not active Flow state */
     }
   }
-  return best ? { id: best.id, phase: best.phase } : null
+  return best ? { id: best.id, phase: best.phase, kind: best.kind } : null
 }

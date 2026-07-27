@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import type { MainEvent, PromptRequest, SessionSnapshot } from '../shared/ipc'
 import { AgentSession } from './acp/session'
 import { resolveAgent } from './agents'
+import { collectContextDocuments } from './providers/registry'
 
 /**
  * Owns every live agent session. Sessions are independent processes, so one
@@ -10,6 +11,7 @@ import { resolveAgent } from './agents'
  */
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, AgentSession>()
+  private providerContext = new Map<string, { phase?: string; hostContext?: unknown }>()
   /** requestId -> sessionId, so permission replies route without the caller knowing. */
   private permissionRoutes = new Map<string, string>()
 
@@ -20,10 +22,14 @@ export class SessionManager extends EventEmitter {
   async create(
     cwd: string,
     agentId: string,
-    toolProfile?: string
+    toolProfile?: string,
+    providerContext: { phase?: string; hostContext?: unknown } = {}
   ): Promise<SessionSnapshot> {
-    const agent = await resolveAgent(agentId, toolProfile)
-    const session = new AgentSession(agent, cwd)
+    const [agent, contextDocuments] = await Promise.all([
+      resolveAgent(agentId, toolProfile),
+      collectContextDocuments(cwd, providerContext)
+    ])
+    const session = new AgentSession(agent, cwd, contextDocuments)
 
     session.on('event', (event: MainEvent) => {
       if (event.type === 'session:blocks') {
@@ -37,6 +43,7 @@ export class SessionManager extends EventEmitter {
     })
 
     this.sessions.set(session.id, session)
+    this.providerContext.set(session.id, providerContext)
     this.emit('event', { type: 'session:created', session: session.getSnapshot() })
 
     try {
@@ -59,6 +66,7 @@ export class SessionManager extends EventEmitter {
     if (!session) return
     session.dispose()
     this.sessions.delete(sessionId)
+    this.providerContext.delete(sessionId)
     this.emit('event', { type: 'session:removed', sessionId })
   }
 
@@ -83,10 +91,11 @@ export class SessionManager extends EventEmitter {
     const existing = this.sessions.get(sessionId)
     if (!existing) return null
     const { cwd, agent } = existing
+    const providerContext = this.providerContext.get(sessionId)
     this.close(sessionId)
     // Carry the tool profile over — restarting is meant to clear context, not
     // silently re-inflate it back to the full toolset.
-    return this.create(cwd, agent.id, agent.toolProfile)
+    return this.create(cwd, agent.id, agent.toolProfile, providerContext)
   }
 
   cancel(sessionId: string): void {
@@ -107,6 +116,7 @@ export class SessionManager extends EventEmitter {
   disposeAll(): void {
     for (const session of this.sessions.values()) session.dispose()
     this.sessions.clear()
+    this.providerContext.clear()
   }
 
   private require(sessionId: string): AgentSession {

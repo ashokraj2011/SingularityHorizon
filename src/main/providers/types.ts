@@ -37,7 +37,10 @@ export interface WorkspaceProvider {
    * grounding package, a spec. Returning these lets the host decide *when* to
    * inject them; the provider only decides *what* is relevant.
    */
-  contextDocuments?(root: string, opts?: { phase?: string }): Promise<ContextDocument[]>
+  contextDocuments?(
+    root: string,
+    opts?: { phase?: string; hostContext?: unknown }
+  ): Promise<ContextDocument[]>
 
   /**
    * Called when the host is about to start a fresh session because the

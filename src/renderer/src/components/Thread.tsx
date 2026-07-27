@@ -27,6 +27,28 @@ export function Thread({ session }: { session: SessionSnapshot }): React.JSX.Ele
   return (
     <div className="thread" ref={ref} onScroll={onScroll}>
       <div className="thread-inner">
+        {session.contextDocuments && session.contextDocuments.length > 0 && (
+          <details className="session-grounding">
+            <summary>
+              <span>Singularity grounding active</span>
+              <span>{session.contextDocuments.length} context source{session.contextDocuments.length === 1 ? '' : 's'}</span>
+            </summary>
+            <p>The selected phase contract, persona, repository world views, and governed evidence are injected with the first prompt.</p>
+            <ul>
+              {session.contextDocuments.map((document, index) => (
+                <li key={`${document.providerId}:${document.title}:${index}`}>
+                  <span className={`grounding-kind ${document.kind ?? 'evidence'}`}>
+                    {document.kind === 'instructions' ? 'Instructions' : 'Evidence'}
+                  </span>
+                  <span>
+                    <strong>{document.title}</strong>
+                    {document.reason && <small>{document.reason}</small>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {session.blocks.map((block) => (
           <Block key={block.id} block={block} />
         ))}

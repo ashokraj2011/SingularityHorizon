@@ -114,6 +114,15 @@ ok('handoff document collected', !!handoff, docs.map((d) => d.title).join(', '))
 ok('handoff carries its text', (handoff?.text ?? '').includes('Carry these decisions'))
 ok('document is attributed to its provider', handoff?.providerId === 'singularity-flow')
 ok('document explains why it is being injected', !!handoff?.reason)
+const exactDocs = await collectContextDocuments(flowish, {
+  hostContext: {
+    work: { kind: 'story', id: 'WORK-142', phase: 'implementation' },
+    persona: 'developer'
+  }
+})
+const exactHandoff = exactDocs.find((d) => d.title.includes('WORK-142') && d.title.includes('handoff'))
+ok('host-selected work context resolves the exact Story', !!exactHandoff, exactDocs.map((d) => d.title).join(', '))
+ok('handoff is explicitly treated as evidence', exactHandoff?.kind === 'evidence', exactHandoff?.kind)
 
 /* --------------------------------------------- 4. registry hygiene */
 

@@ -43,7 +43,7 @@ export async function detectAll(root: string): Promise<ProviderStatus[]> {
 
 export async function collectContextDocuments(
   root: string,
-  opts?: { phase?: string }
+  opts?: { phase?: string; hostContext?: unknown }
 ): Promise<ContextDocument[]> {
   const results = await Promise.all(
     providers.map((p) =>

@@ -404,6 +404,81 @@ textarea {
   gap: 14px;
 }
 
+.session-grounding {
+  border: 1px solid rgba(107, 163, 104, 0.42);
+  border-radius: 10px;
+  background: rgba(107, 163, 104, 0.08);
+  color: var(--text-dim);
+  padding: 10px 12px;
+}
+
+.session-grounding summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  list-style: none;
+}
+
+.session-grounding summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-grounding summary span:last-child {
+  color: var(--green);
+  font-weight: 550;
+}
+
+.session-grounding p {
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.session-grounding ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-grounding li {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  align-items: start;
+  gap: 9px;
+  font-size: 12px;
+}
+
+.session-grounding li strong,
+.session-grounding li small {
+  display: block;
+}
+
+.session-grounding li small {
+  color: var(--text-faint);
+}
+
+.grounding-kind {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 18px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.grounding-kind.instructions {
+  border-color: rgba(107, 163, 104, 0.55);
+  color: var(--green);
+}
+
 .block-user {
   align-self: flex-end;
   max-width: 82%;

@@ -158,7 +158,9 @@ handle('agents:toolProfiles', () =>
   }))
 )
 handle('sessions:create', (opts: { cwd: string; agentId: string; toolProfile?: string }) =>
-  manager.create(opts.cwd, opts.agentId, opts.toolProfile)
+  manager.create(opts.cwd, opts.agentId, opts.toolProfile, {
+    hostContext: getHostContext(opts.cwd)
+  })
 )
 handle('sessions:close', (sessionId: string) => manager.close(sessionId))
 handle('sessions:prompt', (sessionId: string, request: PromptRequest) =>
@@ -357,7 +359,9 @@ export async function activateWorkspace(
   }
 
   try {
-    const created = await manager.create(target, options.agentId ?? 'copilot', options.toolProfile)
+    const created = await manager.create(target, options.agentId ?? 'copilot', options.toolProfile, {
+      hostContext: getHostContext(target)
+    })
     broadcast({ type: 'session:activate', sessionId: created.id })
     return created
   } catch (err) {
