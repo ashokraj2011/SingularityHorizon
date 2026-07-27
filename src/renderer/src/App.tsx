@@ -4,6 +4,7 @@ import { Composer } from './components/Composer'
 import { Sidebar } from './components/Sidebar'
 import { Thread } from './components/Thread'
 import { TopBar } from './components/TopBar'
+import { getApi } from './api'
 import { useActiveSession, useStore } from './store'
 
 export function App(): React.JSX.Element {
@@ -13,11 +14,11 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void bootstrap()
-    return window.acp.onEvent(applyEvent)
+    return getApi().onEvent(applyEvent)
   }, [bootstrap, applyEvent])
 
   const startSession = useCallback(async () => {
-    const dir = await window.acp.pickDirectory()
+    const dir = await getApi().pickDirectory()
     if (!dir) return
     await newSession(dir, agentId)
   }, [agentId, newSession])

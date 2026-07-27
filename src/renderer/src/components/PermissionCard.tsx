@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 
 import type { PendingPermission } from '@shared/ipc'
+import { getApi } from '../api'
 import { useStore } from '../store'
 
 /**
@@ -24,7 +25,7 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
   const allowAll = (): void => {
     const fallback = request.options.find((o) => o.kind === 'allow_once') ?? request.options[0]
     if (!fallback) return
-    void window.acp.setConfigOption(request.sessionId, 'allow_all', 'on')
+    void getApi().setConfigOption(request.sessionId, 'allow_all', 'on')
     void answer(request.requestId, fallback.optionId)
   }
 

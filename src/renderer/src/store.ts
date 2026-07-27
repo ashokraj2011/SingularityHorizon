@@ -8,6 +8,7 @@ import type {
   SessionSnapshot,
   SkillInfo
 } from '@shared/ipc'
+import { getApi } from './api'
 import { resolveSkillInvocation } from './slashMenu'
 
 interface StoreState {
@@ -53,7 +54,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const session = get().sessions[sessionId]
     if (!session) return
     try {
-      const skills = await window.acp.listSkills(session.cwd)
+      const skills = await getApi().listSkills(session.cwd)
       set({ skills: { ...get().skills, [sessionId]: skills } })
     } catch {
       set({ skills: { ...get().skills, [sessionId]: [] } })
@@ -62,8 +63,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
   bootstrap: async () => {
     const [agents, sessions] = await Promise.all([
-      window.acp.listAgents(),
-      window.acp.listSessions()
+      getApi().listAgents(),
+      getApi().listSessions()
     ])
     set({
       agents,
@@ -126,7 +127,7 @@ export const useStore = create<StoreState>((set, get) => ({
       case 'session:turnEnded': {
         // Copilot never pushes token usage, so the meter is refreshed by
         // running /context and /usage once the turn releases the agent.
-        void window.acp.refreshContext(event.sessionId).catch(() => {})
+        void getApi().refreshContext(event.sessionId).catch(() => {})
         return
       }
       default:
@@ -137,7 +138,7 @@ export const useStore = create<StoreState>((set, get) => ({
   newSession: async (cwd, agentId) => {
     set({ launching: true, launchError: null })
     try {
-      await window.acp.createSession({ cwd, agentId })
+      await getApi().createSession({ cwd, agentId })
     } catch (err) {
       set({ launchError: (err as Error).message })
     } finally {
@@ -146,7 +147,7 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   closeSession: async (id) => {
-    await window.acp.closeSession(id)
+    await getApi().closeSession(id)
   },
 
   setActive: (id) => set({ activeId: id }),
@@ -174,13 +175,13 @@ export const useStore = create<StoreState>((set, get) => ({
       if (invocation) {
         const { skill, args } = invocation
         try {
-          const { text: expanded } = await window.acp.expandSkill(
+          const { text: expanded } = await getApi().expandSkill(
             session.cwd,
             skill.name,
             args
           )
           set({ attachments: { ...get().attachments, [activeId]: [] } })
-          await window.acp.prompt(activeId, {
+          await getApi().prompt(activeId, {
             text: expanded,
             attachments,
             displayText: text.trim(),
@@ -199,7 +200,7 @@ export const useStore = create<StoreState>((set, get) => ({
     }
 
     set({ attachments: { ...get().attachments, [activeId]: [] } })
-    await window.acp.prompt(activeId, { text, attachments })
+    await getApi().prompt(activeId, { text, attachments })
   },
 
   /* ------------------------------------------------------------ attachments */
@@ -209,11 +210,11 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!activeId) return
     const paths =
       kind === 'file'
-        ? await window.acp.pickFiles()
-        : await window.acp.pickDirectory().then((d) => (d ? [d] : []))
+        ? await getApi().pickFiles()
+        : await getApi().pickDirectory().then((d) => (d ? [d] : []))
     if (!paths.length) return
 
-    const summaries = await window.acp.statPaths(paths)
+    const summaries = await getApi().statPaths(paths)
     const existing = get().attachments[activeId] ?? []
     const seen = new Set(existing.map((a) => a.path))
     set({
@@ -240,13 +241,13 @@ export const useStore = create<StoreState>((set, get) => ({
   refreshContext: async () => {
     const { activeId } = get()
     if (!activeId) return
-    await window.acp.refreshContext(activeId)
+    await getApi().refreshContext(activeId)
   },
 
   restartSession: async () => {
     const { activeId } = get()
     if (!activeId) return
-    await window.acp.restartSession(activeId)
+    await getApi().restartSession(activeId)
   },
 
   runCommand: async (command) => {
@@ -255,22 +256,22 @@ export const useStore = create<StoreState>((set, get) => ({
     // Visible commands go through the normal prompt path so their output lands
     // in the transcript — /compact and /memory changes are real operations the
     // user should see a record of.
-    await window.acp.prompt(activeId, { text: command })
+    await getApi().prompt(activeId, { text: command })
   },
 
   cancel: () => {
     const { activeId } = get()
-    if (activeId) void window.acp.cancel(activeId)
+    if (activeId) void getApi().cancel(activeId)
   },
 
   setConfigOption: async (optionId, value, sessionId) => {
     const target = sessionId ?? get().activeId
     if (!target) return
-    await window.acp.setConfigOption(target, optionId, value)
+    await getApi().setConfigOption(target, optionId, value)
   },
 
   answerPermission: async (requestId, optionId) => {
-    await window.acp.respondPermission(requestId, optionId)
+    await getApi().respondPermission(requestId, optionId)
   }
 }))
 

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { AttachmentSummary, SessionSnapshot, SkillInfo } from '@shared/ipc'
+import { getApi } from '../api'
 import { useStore } from '../store'
 import { buildSlashItems, type SlashItem } from '../slashMenu'
 import { ConfigPicker } from './ConfigPicker'
@@ -59,7 +60,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
     }
     let cancelled = false
     const timer = setTimeout(() => {
-      window.acp
+      getApi()
         .searchFiles(session.cwd, token.query)
         .then((files) => !cancelled && setFileMatches(files))
         .catch(() => !cancelled && setFileMatches([]))

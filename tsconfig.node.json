@@ -20,6 +20,8 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "src/renderer/src/slashMenu.ts",
+    "src/renderer/src/api.ts",
+    "src/renderer/src/store.ts",
     "scripts/**/*"
   ]
 }

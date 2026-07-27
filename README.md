@@ -33,12 +33,48 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
 
+## Embedding it elsewhere
+
+The UI is host-agnostic. It imports no Electron and no Node, and reaches its host through
+exactly one typed object — `AcpStudioApi`. Swapping that object is the entire job of putting
+Event Horizon somewhere else.
+
+```tsx
+import { EventHorizon } from 'event-horizon/renderer'
+
+<EventHorizon api={myHostApi} />
+```
+
+`api` supplies sessions, prompting, permissions, skills, attachments, and an event stream.
+Plausible implementations:
+
+| Host | `AcpStudioApi` is backed by |
+| --- | --- |
+| Electron (ships today) | the preload `contextBridge` |
+| Browser / web app | a WebSocket or HTTP client against a host that runs the agent |
+| VS Code / JetBrains | `postMessage` to the extension host |
+| Tests | a plain object — no process at all |
+
+The agent side (`src/main/`, minus `index.ts`) is plain Node with no Electron import, so it can
+be hosted by a CLI daemon or a server just as easily as by Electron.
+
+`npm run embed:check` drives the real store through a fake API — create a session, stage and
+send attachments, expand a skill, change config, tear down — with no Electron, no agent process,
+and no filesystem. `npm run guard` fails the build if the renderer ever reaches for
+`window.acp`, `electron`, or a `node:` builtin again, since any of those silently re-welds the
+UI to Electron and breaks every other host.
+
+**The one caveat:** a browser host needs something with filesystem access to run the agent and
+serve `fs/*`. That process is a real security boundary — it can read and write anything the
+agent asks for — so it should be local, authenticated, and never exposed to a network you don't
+control. Nothing in the current code does that; it would be new work.
+
 ## Architecture
 
 The renderer never touches Node. Everything crosses a typed `contextBridge` surface.
 
 ```
-renderer (React)  ←IPC→  main process  ←NDJSON/JSON-RPC over stdio→  agent
+renderer (React)  ←AcpStudioApi→  host adapter  ←NDJSON/JSON-RPC over stdio→  agent
 ```
 
 | Path | Role |
