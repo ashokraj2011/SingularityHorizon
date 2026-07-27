@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import type { ContentBlock } from '@shared/acp'
 import type {
   AgentDefinition,
+  AttachmentMode,
   AttachmentSummary,
   MainEvent,
   SessionSnapshot,
@@ -24,7 +25,8 @@ interface StoreState {
   launching: boolean
   launchError: string | null
   loadSkills: (sessionId: string) => Promise<void>
-  addAttachments: (kind: 'file' | 'folder') => Promise<void>
+  addAttachments: (kind: 'file' | 'folder', mode?: AttachmentMode) => Promise<void>
+  setAttachmentMode: (path: string, mode: AttachmentMode) => void
   removeAttachment: (path: string) => void
   refreshContext: () => Promise<void>
   restartSession: () => Promise<void>
@@ -165,7 +167,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
     const attachments = (state.attachments[activeId] ?? []).map((a) => ({
       path: a.path,
-      kind: a.kind
+      kind: a.kind,
+      mode: a.mode
     }))
 
     // A leading /name that matches a locally-loaded skill is expanded here.
@@ -210,7 +213,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
   /* ------------------------------------------------------------ attachments */
 
-  addAttachments: async (kind) => {
+  addAttachments: async (kind, mode) => {
     const { activeId } = get()
     if (!activeId) return
     const paths =
@@ -219,13 +222,28 @@ export const useStore = create<StoreState>((set, get) => ({
         : await getApi().pickDirectory().then((d) => (d ? [d] : []))
     if (!paths.length) return
 
-    const summaries = await getApi().statPaths(paths)
+    const summaries = (await getApi().statPaths(paths)).map((s) =>
+      s.kind === 'file' ? { ...s, mode: mode ?? 'full' } : s
+    )
     const existing = get().attachments[activeId] ?? []
     const seen = new Set(existing.map((a) => a.path))
     set({
       attachments: {
         ...get().attachments,
         [activeId]: [...existing, ...summaries.filter((s) => !seen.has(s.path))]
+      }
+    })
+  },
+
+  setAttachmentMode: (path, mode) => {
+    const { activeId, attachments } = get()
+    if (!activeId) return
+    set({
+      attachments: {
+        ...attachments,
+        [activeId]: (attachments[activeId] ?? []).map((a) =>
+          a.path === path ? { ...a, mode } : a
+        )
       }
     })
   },

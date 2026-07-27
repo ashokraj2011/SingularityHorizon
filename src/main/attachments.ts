@@ -4,6 +4,7 @@ import { basename, extname, join, relative } from 'node:path'
 
 import type { ContentBlock } from '../shared/acp'
 import type { AttachmentRef, AttachmentSummary } from '../shared/ipc'
+import { isOutlineSupported, outlineFile, renderOutline } from './ast/outline'
 
 /**
  * Turns attached files and folders into ACP prompt content.
@@ -125,6 +126,37 @@ export async function buildAttachments(
         continue
       }
 
+      // Outline mode: send the structure instead of the implementation.
+      // Only attempted for languages the parser covers; anything else falls
+      // through to the normal path rather than silently sending nothing useful.
+      let outlineUnavailable = false
+      if (ref.mode === 'outline') {
+        if (!isOutlineSupported(ref.path)) {
+          // Fall through and send the file in full, but record why so the chip
+          // can say so instead of quietly behaving as though nothing was asked.
+          outlineUnavailable = true
+        } else {
+          const outline = await outlineFile(ref.path)
+          if (outline) {
+            const text = renderOutline(outline)
+            budget -= text.length
+            blocks.push({
+              type: 'resource',
+              resource: { uri: fileUri(ref.path), mimeType: mimeFor(ref.path), text }
+            })
+            summaries.push({
+              path: ref.path,
+              name: basename(ref.path),
+              kind: 'file',
+              bytes: info.size,
+              mode: 'outline',
+              savedChars: Math.max(0, info.size - text.length)
+            })
+            continue
+          }
+        }
+      }
+
       const raw = await readFile(ref.path)
       if (looksBinary(raw)) {
         // Reference it rather than embedding bytes as text.
@@ -162,7 +194,9 @@ export async function buildAttachments(
         name: basename(ref.path),
         kind: 'file',
         bytes: info.size,
-        truncated: truncated || undefined
+        truncated: truncated || undefined,
+        mode: 'full',
+        outlineUnavailable: outlineUnavailable || undefined
       })
     } catch (err) {
       summaries.push({

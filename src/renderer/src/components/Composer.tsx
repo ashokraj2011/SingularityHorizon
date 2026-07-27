@@ -31,6 +31,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
   const attachments = useStore((s) => s.attachments[session.id] ?? EMPTY_ATTACHMENTS)
   const addAttachments = useStore((s) => s.addAttachments)
   const removeAttachment = useStore((s) => s.removeAttachment)
+  const setAttachmentMode = useStore((s) => s.setAttachmentMode)
   const [attachOpen, setAttachOpen] = useState(false)
   const attachRef = useRef<HTMLDivElement>(null)
 
@@ -177,6 +178,21 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
               >
                 <span className="chip-icon">{a.kind === 'folder' ? '▤' : '◫'}</span>
                 <span className="chip-name">{a.name}</span>
+                {a.kind === 'file' && (
+                  <button
+                    className={`chip-mode ${a.mode === 'outline' ? 'on' : ''}`}
+                    title={
+                      a.mode === 'outline'
+                        ? 'Sending signatures only. Click for the full file.'
+                        : 'Sending the whole file. Click to send only its structure.'
+                    }
+                    onClick={() =>
+                      setAttachmentMode(a.path, a.mode === 'outline' ? 'full' : 'outline')
+                    }
+                  >
+                    {a.mode === 'outline' ? 'outline' : 'full'}
+                  </button>
+                )}
                 {a.bytes !== undefined && (
                   <span className="chip-meta">{formatBytes(a.bytes)}</span>
                 )}
@@ -226,6 +242,16 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
                   }}
                 >
                   <span className="chip-icon">◫</span> Add files…
+                </button>
+                <button
+                  className="menu-item"
+                  title="Attach signatures only — typically 75-90% smaller than the file"
+                  onClick={() => {
+                    setAttachOpen(false)
+                    void addAttachments('file', 'outline')
+                  }}
+                >
+                  <span className="chip-icon">≡</span> Add files as outline…
                 </button>
                 <button
                   className="menu-item"

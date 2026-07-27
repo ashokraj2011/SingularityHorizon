@@ -31,6 +31,7 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Context meter** — live context-window usage with a full breakdown, plus session token totals.
 - **Session actions** — compact the conversation, inspect or toggle agent memory, or start a fresh session on the same folder.
 - **Tool profiles** — trade agent breadth for context. Measured: a 71% cut in per-request overhead (see below).
+- **AST outlines** — attach a file's structure instead of its text. Measured 75% smaller across a real sample, 83–90% on implementation-heavy files.
 - **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
 
@@ -168,6 +169,29 @@ breadth. Because these are spawn flags with no ACP equivalent, the choice is fix
 session's lifetime — `restartSession` deliberately carries it over rather than silently
 re-inflating to Full.
 
+**Attach structure, not text.** Most questions about a file need its shape, not its
+implementation. `src/main/ast/outline.ts` parses TS/JS with the TypeScript compiler — already a
+dependency, so no native module or WASM grammar — and emits declarations with bodies stripped.
+Measured on this repo:
+
+| file | full | outline | saving |
+| --- | --- | --- | --- |
+| `renderer/components/Composer.tsx` | 2,449 | 235 | 90% |
+| `main/attachments.ts` | 1,849 | 295 | 84% |
+| `main/acp/session.ts` | 5,080 | 887 | 83% |
+| `main/manager.ts` | 966 | 313 | 68% |
+| `shared/ipc.ts` | 1,684 | 1,298 | 23% |
+| **total** | **12,028** | **3,028** | **75%** |
+
+(approximate tokens at 4 chars each)
+
+`ipc.ts` saves least because it is nearly all type declarations — those *are* signatures, so
+there is nothing to strip. That is the honest shape of the tradeoff, not a defect.
+
+Unlike a grep excerpt, an outline is structurally complete: every declaration is present and
+none are half-quoted. Languages the parser doesn't cover fall back to full content and say so on
+the chip rather than silently sending something less useful.
+
 **Token size and billing are different things.** Copilot bills premium requests with a
 per-model multiplier, not tokens — Haiku 0.33x against Opus 15x is a 45x spread, and it was
 already on the wire in `_meta.copilotUsage` while being invisible in the UI. The model picker
@@ -183,6 +207,7 @@ npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent
 npm run profile:check      # tool-profile flags reach spawn AND measurably reduce overhead
+npm run outline:check      # AST outlines keep structure and drop bodies
 npm run embed:check        # the UI runs with no Electron, no agent, no filesystem
 npm run guard              # the UI has not re-coupled itself to Electron
 ```

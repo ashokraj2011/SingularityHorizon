@@ -1308,3 +1308,25 @@ textarea {
     opacity: 0;
   }
 }
+
+/* Attachment mode toggle — full file vs structural outline. */
+.chip-mode {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.chip-mode:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.chip-mode.on {
+  color: var(--blue);
+  border-color: var(--blue);
+  background: rgba(106, 155, 209, 0.12);
+}

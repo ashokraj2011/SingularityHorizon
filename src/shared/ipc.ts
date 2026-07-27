@@ -35,9 +35,18 @@ export type ThreadBlock =
 
 /* --------------------------------------------------------- attachments */
 
+/**
+ * `outline` sends a structural view — signatures with bodies stripped —
+ * instead of the file. Measured 75–90% smaller on implementation-heavy source,
+ * and unlike a grep excerpt it is guaranteed complete: every declaration is
+ * present. Falls back to full content for languages the parser doesn't cover.
+ */
+export type AttachmentMode = 'full' | 'outline'
+
 export interface AttachmentRef {
   path: string
   kind: 'file' | 'folder'
+  mode?: AttachmentMode
 }
 
 /** What actually got sent, recorded on the user block. */
@@ -52,6 +61,12 @@ export interface AttachmentSummary {
   binary?: boolean
   /** For folders: how many entries were listed. */
   entryCount?: number
+  /** Which mode was actually used — may differ from what was asked for. */
+  mode?: AttachmentMode
+  /** True when outline was requested but the language isn't supported. */
+  outlineUnavailable?: boolean
+  /** Approximate tokens saved by outlining, for display. */
+  savedChars?: number
   error?: string
 }
 
