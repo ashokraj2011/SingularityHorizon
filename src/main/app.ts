@@ -4,7 +4,13 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import type { DirEntry, MainEvent, PromptRequest } from '../shared/ipc'
+import type {
+  AgentDefinition,
+  DirEntry,
+  MainEvent,
+  PromptRequest,
+  SessionSnapshot
+} from '../shared/ipc'
 import { availableAgents, TOOL_PROFILES } from './agents'
 import { indexFor } from './ast/astIndex'
 import { extractSymbol } from './ast/outline'
@@ -314,17 +320,28 @@ export function openEventHorizonWindow(options: OpenWindowOptions = {}): Browser
 export interface EventHorizonStatus {
   handlersRegistered: boolean
   windowOpen: boolean
-  sessions: number
+  /** ACP runtimes discovered on this machine. */
+  agents: AgentDefinition[]
+  /** Live sessions, not a count — a host may want to render them. */
+  sessions: SessionSnapshot[]
   providers: string[]
   hostContexts: number
 }
 
-/** Introspection for a host that wants to show whether the surface is live. */
-export function eventHorizonStatus(): EventHorizonStatus {
+/**
+ * Introspection for a host that wants to show whether the surface is live and
+ * what it found.
+ *
+ * Async because agent discovery probes the filesystem for each runtime: a host
+ * asking "is Copilot available here?" wants the real answer, not a cached one
+ * from before the user installed it.
+ */
+export async function eventHorizonStatus(): Promise<EventHorizonStatus> {
   return {
     handlersRegistered,
     windowOpen: !!mainWindow && !mainWindow.isDestroyed(),
-    sessions: manager.list().length,
+    agents: await availableAgents(),
+    sessions: manager.list(),
     providers: registeredProviders().map((p) => p.id),
     hostContexts: hostContexts.size
   }
