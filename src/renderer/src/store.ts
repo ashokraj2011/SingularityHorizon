@@ -22,6 +22,8 @@ interface StoreState {
   skills: Record<string, SkillInfo[]>
   /** Staged attachments, per session, cleared when a prompt is sent. */
   attachments: Record<string, AttachmentSummary[]>
+  /** Opaque host context keyed by working directory; core never reads it. */
+  hostContexts: Record<string, unknown>
   launching: boolean
   launchError: string | null
   loadSkills: (sessionId: string) => Promise<void>
@@ -52,6 +54,7 @@ export const useStore = create<StoreState>((set, get) => ({
   toolProfiles: [],
   skills: {},
   attachments: {},
+  hostContexts: {},
   launching: false,
   launchError: null,
 
@@ -129,6 +132,10 @@ export const useStore = create<StoreState>((set, get) => ({
           order,
           activeId: state.activeId === event.sessionId ? (order[0] ?? null) : state.activeId
         })
+        return
+      }
+      case 'host:context': {
+        set({ hostContexts: { ...state.hostContexts, [event.cwd]: event.context } })
         return
       }
       case 'session:turnEnded': {
@@ -300,4 +307,9 @@ export const useStore = create<StoreState>((set, get) => ({
 
 export function useActiveSession(): SessionSnapshot | null {
   return useStore((s) => (s.activeId ? (s.sessions[s.activeId] ?? null) : null))
+}
+
+/** Host context for a working directory, or null when the host pushed none. */
+export function useHostContext(cwd: string | undefined): unknown {
+  return useStore((s) => (cwd ? (s.hostContexts[cwd] ?? null) : null))
 }

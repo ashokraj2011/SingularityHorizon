@@ -9,6 +9,7 @@
  */
 import { setApi } from '../src/renderer/src/api'
 import { useStore } from '../src/renderer/src/store'
+import { getSlots, setSlots } from '../src/renderer/src/slots'
 import type {
   AcpStudioApi,
   MainEvent,
@@ -269,6 +270,26 @@ ok('session removed', after.sessions.s1 === undefined)
 ok('skills cleaned up with the session', after.skills.s1 === undefined)
 ok('attachments cleaned up with the session', after.attachments.s1 === undefined)
 ok('active id cleared', after.activeId === null)
+
+/* --------------------------------- host context + UI slots (embedding) */
+
+emit({
+  type: 'host:context',
+  cwd: '/fake/project',
+  context: { workItem: 'WORK-9', phase: 'design' }
+})
+const hc = useStore.getState().hostContexts['/fake/project'] as
+  | { workItem?: string }
+  | undefined
+ok('host context stored by cwd', hc?.workItem === 'WORK-9', JSON.stringify(hc))
+
+emit({ type: 'host:context', cwd: '/fake/project', context: null })
+ok('host context can be cleared', useStore.getState().hostContexts['/fake/project'] === null)
+
+setSlots({ topBarLeading: () => null })
+ok('a host can register slots', typeof getSlots().topBarLeading === 'function')
+setSlots(undefined)
+ok('slots reset to empty', getSlots().topBarLeading === undefined)
 
 /* -------------------------------------------------------------- report */
 

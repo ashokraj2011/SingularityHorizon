@@ -22,6 +22,7 @@
     "src/renderer/src/slashMenu.ts",
     "src/renderer/src/api.ts",
     "src/renderer/src/store.ts",
+    "src/renderer/src/slots.ts",
     "scripts/**/*"
   ]
 }

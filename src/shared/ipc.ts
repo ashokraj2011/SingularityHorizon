@@ -246,6 +246,11 @@ export type MainEvent =
   | { type: 'session:patch'; sessionId: string; patch: Partial<SessionSnapshot> }
   | { type: 'session:removed'; sessionId: string }
   | { type: 'session:turnEnded'; sessionId: string; stopReason: StopReason }
+  /**
+   * Host-supplied context for a working directory. The value is opaque to
+   * core — only the host's own UI slot knows how to read it.
+   */
+  | { type: 'host:context'; cwd: string; context: unknown }
 
 /* ------------------------------------------------------------- fs types */
 

@@ -8,6 +8,7 @@
  */
 export { EventHorizon, type EventHorizonProps } from './EventHorizon'
 export { setApi, getApi, peekApi, electronApi } from './api'
+export { setSlots, getSlots, type EventHorizonSlots, type SlotContext } from './slots'
 
 /** Individual pieces, for hosts that want to compose their own layout. */
 export { App } from './App'
@@ -16,7 +17,7 @@ export { Composer } from './components/Composer'
 export { TopBar } from './components/TopBar'
 export { Sidebar } from './components/Sidebar'
 export { ContextPanel } from './components/ContextPanel'
-export { useStore, useActiveSession } from './store'
+export { useStore, useActiveSession, useHostContext } from './store'
 
 export type {
   AcpStudioApi,

@@ -31,6 +31,22 @@ export {
 export { listSkills, expandSkill } from './skills'
 export { buildAttachments, statPaths } from './attachments'
 export { discoverRepo, ensureAstIgnored } from './repo'
+
+/**
+ * In-process embedding API. A host Electron app calls these instead of
+ * spawning a second process, so both share one runtime and one lifecycle.
+ * Importing this module starts nothing — the host decides when.
+ */
+export {
+  registerEventHorizonHandlers,
+  openEventHorizonWindow,
+  eventHorizonStatus,
+  setHostContext,
+  getHostContext,
+  startStandalone,
+  type OpenWindowOptions,
+  type EventHorizonStatus
+} from './app'
 export { AstIndex, indexFor } from './ast/astIndex'
 export { outlineFile, outlineSource, renderOutline, extractSymbol } from './ast/outline'
 

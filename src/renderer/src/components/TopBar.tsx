@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { SessionSnapshot } from '@shared/ipc'
 import { formatTokens } from '@shared/contextInfo'
-import { useStore } from '../store'
+import { useHostContext, useStore } from '../store'
+import { getSlots } from '../slots'
 import { ContextPanel } from './ContextPanel'
 
 export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Element {
@@ -24,6 +25,10 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
     return () => window.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
+  const hostContext = useHostContext(session.cwd)
+  const slots = getSlots()
+  const slotCtx = { session, hostContext }
+
   const allowAllOption = session.configOptions.find((o) => o.id === 'allow_all')
   const allowAllOn = allowAllOption?.currentValue === 'on'
   const ctx = session.context
@@ -42,7 +47,11 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
         {home}
       </span>
 
+      {slots.topBarLeading?.(slotCtx)}
+
       <span className="spacer" />
+
+      {slots.topBarTrailing?.(slotCtx)}
 
       {ctx && (
         <button
