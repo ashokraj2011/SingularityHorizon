@@ -152,8 +152,7 @@ const fakeApi: AcpStudioApi = {
     workingDir,
     relativeWorkingDir: '.',
     isGit: true,
-    hasWorkItems: false,
-    worldModelReady: false
+    providers: []
   }),
   refreshAstIndex: async () => ({
     files: 2,

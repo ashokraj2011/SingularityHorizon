@@ -123,7 +123,7 @@ ok('repo root resolved from a subdirectory', info.root === canonicalRepo, info.r
 ok('working directory canonicalized', info.workingDir === canonicalSub, info.workingDir)
 ok('relative working dir computed', info.relativeWorkingDir === 'src', info.relativeWorkingDir)
 ok('detected as git', info.isGit === true)
-ok('no work-items in a plain repo', info.hasWorkItems === false)
+ok('no providers registered by default', info.providers.length === 0)
 
 /* -------------------------------------------------------- shared instance */
 

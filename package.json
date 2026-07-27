@@ -10,7 +10,8 @@
     "./core": "./src/main/core.ts",
     "./shared": "./src/shared/ipc.ts",
     "./shared/acp": "./src/shared/acp.ts",
-    "./shared/context": "./src/shared/contextInfo.ts"
+    "./shared/context": "./src/shared/contextInfo.ts",
+    "./providers/singularity-flow": "./src/main/providers/singularityFlow.ts"
   },
   "files": [
     "src",
@@ -38,8 +39,9 @@
     "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
     "guard": "sh scripts/guard-coupling.sh",
     "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
-    "check": "npm run guard && npm run typecheck && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run profile:check && npm run attach:check",
-    "dist": "electron-vite build && electron-builder"
+    "check": "npm run guard && npm run typecheck && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run provider:check && npm run profile:check && npm run attach:check",
+    "dist": "electron-vite build && electron-builder",
+    "provider:check": "esbuild scripts/provider-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/provider-check.mjs --log-level=error && node out/provider-check.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0"
@@ -66,8 +68,18 @@
   "build": {
     "appId": "ai.singularity.event-horizon",
     "productName": "Event Horizon",
-    "directories": { "output": "release" },
-    "files": ["out/**/*", "package.json"],
-    "mac": { "category": "public.app-category.developer-tools", "target": ["dmg"] }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg"
+      ]
+    }
   }
 }

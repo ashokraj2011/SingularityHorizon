@@ -30,6 +30,25 @@ export {
 } from './agents'
 export { listSkills, expandSkill } from './skills'
 export { buildAttachments, statPaths } from './attachments'
+export { discoverRepo, ensureAstIgnored } from './repo'
+export { AstIndex, indexFor } from './ast/astIndex'
+export { outlineFile, outlineSource, renderOutline, extractSymbol } from './ast/outline'
+
+/**
+ * The workflow extension point. Concrete providers are NOT exported here — a
+ * host imports the one it wants from its own subpath under `providers/` and
+ * registers it at startup. Core stays ignorant of every workflow system, which
+ * is what lets the same build run standalone and embedded.
+ */
+export {
+  registerProvider,
+  registeredProviders,
+  clearProviders,
+  detectAll,
+  collectContextDocuments,
+  notifyPhaseEnter
+} from './providers/registry'
+export type { WorkspaceProvider } from './providers/types'
 
 export type { BuiltAttachments } from './attachments'
 export type { CreateTerminalParams } from './acp/terminals'

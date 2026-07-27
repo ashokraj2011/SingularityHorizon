@@ -154,11 +154,41 @@ export interface RepoInfo {
   workingDir: string
   relativeWorkingDir: string
   isGit: boolean
-  /** `singularity/work-items/` present — this repo is under Flow governance. */
-  hasWorkItems: boolean
-  /** `singularity-flow wm check` succeeds, so compose/build are usable. */
-  worldModelReady: boolean
-  flowVersion?: string
+  /**
+   * Anything a registered WorkspaceProvider had to say. Empty in the standalone
+   * app, which knows nothing about any workflow system.
+   */
+  providers: ProviderStatus[]
+}
+
+/**
+ * What a workflow integration reports about a repo. Deliberately generic: the
+ * core renders these without understanding what any of them mean.
+ */
+export interface ProviderStatus {
+  id: string
+  name: string
+  /** Whether the integration is usable here, not merely present. */
+  ready: boolean
+  version?: string
+  /** Current lifecycle phase, when the provider tracks one. */
+  phase?: string
+  /** Short line for the UI, e.g. "WORK-142 · implementation". */
+  summary?: string
+  /** Anything provider-specific the host may want; core never inspects it. */
+  detail?: Record<string, unknown>
+}
+
+/** A document a provider thinks should seed a session's context. */
+export interface ContextDocument {
+  /** Provider that supplied it. */
+  providerId: string
+  title: string
+  /** Absolute path when it came from disk; absent for generated content. */
+  path?: string
+  text: string
+  /** Why this is being injected, shown to the user before it is sent. */
+  reason?: string
 }
 
 export interface AstIndexStats {

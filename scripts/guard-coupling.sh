@@ -28,4 +28,28 @@ else
   echo "✓ shared/ is host-independent"
 fi
 
+# The core must not know about any particular workflow system. Providers are
+# registered by the host; a core import would re-couple the standalone tool to
+# something it should work perfectly well without.
+hits=$(grep -rn "providers/singularityFlow\|providers/singularity-flow" \
+  src/main src/shared src/renderer --include='*.ts' --include='*.tsx' \
+  | grep -v '^src/main/providers/' || true)
+if [ -n "$hits" ]; then
+  echo "✗ core imports a concrete provider:"; echo "$hits"; fail=1
+else
+  echo "✓ no concrete provider imported by core"
+fi
+
+# Functional coupling only — the brand name is fine (Event Horizon *is* a
+# Singularity tool). What must not appear in core is a dependency on the
+# workflow CLI or its on-disk conventions.
+hits=$(grep -rn "singularity-flow\|work-items\|wm compose\|wm check" \
+  src/main src/shared src/renderer --include='*.ts' --include='*.tsx' \
+  | grep -v '^src/main/providers/' || true)
+if [ -n "$hits" ]; then
+  echo "✗ core depends on a specific workflow system:"; echo "$hits"; fail=1
+else
+  echo "✓ core is workflow-agnostic"
+fi
+
 exit $fail

@@ -209,6 +209,46 @@ pass rather than a copy-paste.
 
 ---
 
+## 6b. Workflow integrations (phases, work items, handoffs)
+
+Event Horizon's core knows about repos, sessions, and context. It knows nothing about any SDLC
+system, and must not learn — otherwise the standalone tool starts depending on a CLI it has no
+business requiring. Anything lifecycle-shaped arrives through a provider the **host** registers:
+
+```ts
+import { registerProvider } from 'event-horizon/core'
+import { singularityFlowProvider } from 'event-horizon/providers/singularity-flow'
+
+registerProvider(singularityFlowProvider())
+```
+
+Standalone registers nothing and behaves as a plain agent client. The dependency only ever
+points one way: the workflow tool knows about Event Horizon, never the reverse.
+
+```ts
+interface WorkspaceProvider {
+  id: string
+  name: string
+  detect(root): Promise<ProviderStatus | null>          // null = not applicable, not an error
+  contextDocuments?(root, { phase }): Promise<ContextDocument[]>
+  onPhaseEnter?(root, phase): Promise<void>
+}
+```
+
+A provider decides *what* is relevant; the host decides *when* to inject it. That split is what
+lets phase-aware context cleaning work: on a phase change, start a fresh session (only a new
+`sessionId` truly resets agent context — `/compact` summarizes, it does not reset) and seed it
+with the handoff documents the provider returned.
+
+**Providers cannot break the app.** Every call is wrapped: a throw, a rejection, or a hang is
+contained and treated as "contributed nothing". This is verified by `provider:check`, which
+registers a provider that throws and one that never resolves, and asserts session setup still
+completes. An agent client that refuses to open a folder because an unrelated CLI is missing
+would be worse than one with no workflow integration at all.
+
+`npm run guard` fails the build if anything under `src/main/` outside `providers/` imports a
+concrete provider or references a workflow CLI or its on-disk conventions.
+
 ## 7. Verify your adapter
 
 The suite that proves the UI is host-agnostic is also the template for testing yours:
