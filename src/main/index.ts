@@ -11,6 +11,13 @@
 import { startStandalone } from './app'
 
 export {
+  EVENT_HORIZON_CONTRACT,
+  EVENT_HORIZON_CONTRACT_VERSION,
+  conformance,
+  requireContract
+} from './contract'
+
+export {
   registerEventHorizonHandlers,
   openEventHorizonWindow,
   activateWorkspace,

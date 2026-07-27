@@ -33,6 +33,22 @@ export { buildAttachments, statPaths } from './attachments'
 export { discoverRepo, ensureAstIgnored } from './repo'
 
 /**
+ * The embedding contract. A host should assert against this, never against
+ * this repo's source — see contract.ts for why.
+ */
+export {
+  EVENT_HORIZON_CONTRACT,
+  EVENT_HORIZON_CONTRACT_VERSION,
+  CONTRACT_API,
+  CONTRACT_EVENTS,
+  CONTRACT_CAPABILITIES,
+  conformance,
+  requireContract,
+  type EventHorizonContract,
+  type ConformanceResult
+} from './contract'
+
+/**
  * In-process embedding API. A host Electron app calls these instead of
  * spawning a second process, so both share one runtime and one lifecycle.
  * Importing this module starts nothing — the host decides when.
