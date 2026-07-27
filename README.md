@@ -33,41 +33,51 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
 
-## Embedding it elsewhere
+## Standalone, or embedded in your own app
 
-The UI is host-agnostic. It imports no Electron and no Node, and reaches its host through
-exactly one typed object — `AcpStudioApi`. Swapping that object is the entire job of putting
-Event Horizon somewhere else.
+Both, from one codebase — they are not two modes. The UI imports no Electron and no Node, and
+reaches its host through exactly one typed object, `AcpStudioApi`. The desktop app is simply the
+first host, and its entry point is about twenty lines:
+
+```tsx
+const api = electronApi()                    // window.acp, from the preload bridge
+createRoot(el).render(<EventHorizon api={api} />)
+```
+
+Any other host does the same with a different `api`:
 
 ```tsx
 import { EventHorizon } from 'event-horizon/renderer'
+import 'event-horizon/renderer/style.css'
 
 <EventHorizon api={myHostApi} />
 ```
 
-`api` supplies sessions, prompting, permissions, skills, attachments, and an event stream.
-Plausible implementations:
+| Import | Runtime | What it is |
+| --- | --- | --- |
+| `event-horizon/renderer` | browser | the interface — transport-agnostic |
+| `event-horizon/core` | node | the ACP engine — no Electron import |
+| `event-horizon/shared` | either | `AcpStudioApi` and the view-model types |
 
-| Host | `AcpStudioApi` is backed by |
-| --- | --- |
-| Electron (ships today) | the preload `contextBridge` |
-| Browser / web app | a WebSocket or HTTP client against a host that runs the agent |
-| VS Code / JetBrains | `postMessage` to the extension host |
-| Tests | a plain object — no process at all |
+Consumed as source, so your bundler compiles it and types resolve natively — no build artifact
+to keep in sync. React 18+ is a peer dependency.
 
-The agent side (`src/main/`, minus `index.ts`) is plain Node with no Electron import, so it can
-be hosted by a CLI daemon or a server just as easily as by Electron.
+**→ [docs/embedding.md](docs/embedding.md)** has the full guide: recipes for another Electron
+app, a VS Code webview, and a browser + daemon; the complete list of what an adapter must
+implement; and the security boundary that a browser host introduces.
+
+Two things worth knowing before you start. The engine (`src/main/`, minus `index.ts`) is plain
+Node, so a CLI daemon or server can host it as easily as Electron. And a browser host is the one
+genuinely harder case: a tab cannot spawn the agent or answer its `fs/*` calls, so a local
+process must — one that executes shell commands on request, and therefore needs loopback
+binding, a token, and origin checks. That daemon is not in the repo; it deserves a design pass,
+not a copy-paste.
 
 `npm run embed:check` drives the real store through a fake API — create a session, stage and
 send attachments, expand a skill, change config, tear down — with no Electron, no agent process,
 and no filesystem. `npm run guard` fails the build if the renderer ever reaches for
 `window.acp`, `electron`, or a `node:` builtin again, since any of those silently re-welds the
-UI to Electron and breaks every other host.
-
-**The one caveat:** a browser host needs something with filesystem access to run the agent and
-serve `fs/*`. That process is a real security boundary — it can read and write anything the
-agent asks for — so it should be local, authenticated, and never exposed to a network you don't
-control. Nothing in the current code does that; it would be new work.
+UI to Electron: it keeps working in the desktop build and breaks every other host.
 
 ## Architecture
 

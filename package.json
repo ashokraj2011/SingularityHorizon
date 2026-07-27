@@ -3,6 +3,25 @@
   "version": "0.1.0",
   "description": "Event Horizon — a Singularity tool. Desktop client for coding agents that speak the Agent Client Protocol.",
   "main": "./out/main/index.js",
+  "//exports": "Consumed as source: the host's bundler compiles the TS/TSX, so types resolve natively and there is no build step to keep in sync. Works today for a workspace/monorepo dependency or a git dependency. Publishing to npm would additionally need a lib build emitting JS + .d.ts.",
+  "exports": {
+    "./renderer": "./src/renderer/src/index.ts",
+    "./renderer/style.css": "./src/renderer/src/styles/index.css",
+    "./core": "./src/main/core.ts",
+    "./shared": "./src/shared/ipc.ts",
+    "./shared/acp": "./src/shared/acp.ts",
+    "./shared/context": "./src/shared/contextInfo.ts"
+  },
+  "files": [
+    "src",
+    "out",
+    "electron.vite.config.ts",
+    "tsconfig*.json"
+  ],
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
   "author": "Ashok Raj",
   "license": "MIT",
   "scripts": {
