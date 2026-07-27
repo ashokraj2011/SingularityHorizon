@@ -6,7 +6,10 @@ import { join, resolve } from 'node:path'
 
 import type { DirEntry, MainEvent, PromptRequest } from '../shared/ipc'
 import { availableAgents, TOOL_PROFILES } from './agents'
+import { indexFor } from './ast/astIndex'
+import { extractSymbol } from './ast/outline'
 import { statPaths } from './attachments'
+import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
 
@@ -102,6 +105,34 @@ handle('sessions:runCommandSilent', (sessionId: string, command: string) =>
 )
 handle('sessions:refreshContext', (sessionId: string) => manager.refreshContext(sessionId))
 handle('fs:statPaths', (paths: string[]) => statPaths(paths))
+
+handle('repo:describe', async (workingDir: string) => {
+  const info = await discoverRepo(workingDir)
+  // Keep the index out of git the moment we know where the repo is, rather
+  // than waiting for the first search to create an untracked directory.
+  if (info.isGit) await ensureAstIgnored(info.root)
+  return info
+})
+handle('ast:refresh', (repoRoot: string) => indexFor(repoRoot).refresh())
+handle('ast:rebuild', (repoRoot: string) => indexFor(repoRoot).rebuild())
+handle('ast:search', async (repoRoot: string, query: string) => {
+  const index = indexFor(repoRoot)
+  // Refresh before searching: a stale hit sends the agent to a line that has
+  // moved, which is worse than a slightly slower search.
+  await index.refresh()
+  return index.search(query)
+})
+handle('ast:attachSymbol', async (repoRoot: string, path: string, name: string) => {
+  const found = await extractSymbol(path, name)
+  if (!found) return null
+  return {
+    path,
+    name: `${name} (${found.kind})`,
+    kind: 'file' as const,
+    bytes: found.text.length,
+    mode: 'outline' as const
+  }
+})
 handle('dialog:pickFiles', async () => {
   if (!mainWindow) return []
   const res = await dialog.showOpenDialog(mainWindow, {

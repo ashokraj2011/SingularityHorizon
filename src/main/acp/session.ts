@@ -24,6 +24,7 @@ import type {
   ThreadBlock
 } from '../../shared/ipc'
 import { parseContext, parseUsage } from '../../shared/contextInfo'
+import { indexFor } from '../ast/astIndex'
 import { buildAttachments } from '../attachments'
 import { RpcPeer } from './jsonrpc'
 import { TerminalManager } from './terminals'
@@ -339,6 +340,10 @@ export class AgentSession extends EventEmitter {
 
       case 'fs/write_text_file': {
         await writeTextFile([this.cwd], params)
+        // The index validates by mtime anyway, but dropping the entry here
+        // closes the window where a write and a search land in the same
+        // millisecond and the timestamp comparison sees no change.
+        indexFor(this.cwd).invalidate(params.path)
         return {}
       }
 

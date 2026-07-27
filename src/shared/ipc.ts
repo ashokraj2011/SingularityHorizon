@@ -143,6 +143,47 @@ export interface PromptRequest {
   skill?: InvokedSkill
 }
 
+/* ------------------------------------------------------------------ repo */
+
+/**
+ * The repo owns durable state (AST index, world model); the working directory
+ * is where the agent actually runs, which may be a subdirectory of it.
+ */
+export interface RepoInfo {
+  root: string
+  workingDir: string
+  relativeWorkingDir: string
+  isGit: boolean
+  /** `singularity/work-items/` present — this repo is under Flow governance. */
+  hasWorkItems: boolean
+  /** `singularity-flow wm check` succeeds, so compose/build are usable. */
+  worldModelReady: boolean
+  flowVersion?: string
+}
+
+export interface AstIndexStats {
+  files: number
+  symbols: number
+  /** Files re-parsed on the last refresh because they changed. */
+  parsed: number
+  /** Files served from cache. */
+  reused: number
+  removed: number
+  durationMs: number
+  builtAt?: number
+}
+
+export interface SymbolHit {
+  name: string
+  kind: string
+  path: string
+  line: number
+  endLine: number
+  exported: boolean
+  container?: string
+  signature: string
+}
+
 /* ------------------------------------------------------------- agent def */
 
 export interface AgentDefinition {
@@ -213,6 +254,11 @@ export interface AcpStudioApi {
   ): Promise<{ text: string; skill: SkillInfo }>
   pickFiles(): Promise<string[]>
   statPaths(paths: string[]): Promise<AttachmentSummary[]>
+  describeRepo(workingDir: string): Promise<RepoInfo>
+  refreshAstIndex(repoRoot: string): Promise<AstIndexStats>
+  rebuildAstIndex(repoRoot: string): Promise<AstIndexStats>
+  searchSymbols(repoRoot: string, query: string): Promise<SymbolHit[]>
+  attachSymbol(repoRoot: string, path: string, name: string): Promise<AttachmentSummary | null>
   cancel(sessionId: string): Promise<void>
   respondPermission(requestId: string, optionId: string | null): Promise<void>
   setConfigOption(sessionId: string, optionId: string, value: string): Promise<void>

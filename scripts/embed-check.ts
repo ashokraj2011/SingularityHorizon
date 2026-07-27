@@ -147,6 +147,51 @@ const fakeApi: AcpStudioApi = {
   readFile: async () => '',
   searchFiles: async () => [],
   homeDir: async () => '/fake',
+  describeRepo: async (workingDir) => ({
+    root: '/fake/project',
+    workingDir,
+    relativeWorkingDir: '.',
+    isGit: true,
+    hasWorkItems: false,
+    worldModelReady: false
+  }),
+  refreshAstIndex: async () => ({
+    files: 2,
+    symbols: 7,
+    parsed: 0,
+    reused: 2,
+    removed: 0,
+    durationMs: 1
+  }),
+  rebuildAstIndex: async () => ({
+    files: 2,
+    symbols: 7,
+    parsed: 2,
+    reused: 0,
+    removed: 0,
+    durationMs: 9
+  }),
+  searchSymbols: async (_root, query) => {
+    calls.push(`searchSymbols:${query}`)
+    return [
+      {
+        name: 'demoFn',
+        kind: 'function',
+        path: 'src/demo.ts',
+        line: 3,
+        endLine: 8,
+        exported: true,
+        signature: 'export function demoFn(): void'
+      }
+    ]
+  },
+  attachSymbol: async (_root, path, name) => ({
+    path,
+    name: `${name} (function)`,
+    kind: 'file' as const,
+    bytes: 120,
+    mode: 'outline' as const
+  }),
   onEvent: (listener) => {
     emit = listener
     return () => {

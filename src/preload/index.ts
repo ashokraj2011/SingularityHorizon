@@ -22,6 +22,12 @@ const api: AcpStudioApi = {
   expandSkill: (cwd, name, args) => ipcRenderer.invoke('skills:expand', cwd, name, args),
   pickFiles: () => ipcRenderer.invoke('dialog:pickFiles'),
   statPaths: (paths) => ipcRenderer.invoke('fs:statPaths', paths),
+  describeRepo: (workingDir) => ipcRenderer.invoke('repo:describe', workingDir),
+  refreshAstIndex: (repoRoot) => ipcRenderer.invoke('ast:refresh', repoRoot),
+  rebuildAstIndex: (repoRoot) => ipcRenderer.invoke('ast:rebuild', repoRoot),
+  searchSymbols: (repoRoot, query) => ipcRenderer.invoke('ast:search', repoRoot, query),
+  attachSymbol: (repoRoot, path, name) =>
+    ipcRenderer.invoke('ast:attachSymbol', repoRoot, path, name),
   cancel: (sessionId) => ipcRenderer.invoke('sessions:cancel', sessionId),
   respondPermission: (requestId, optionId) =>
     ipcRenderer.invoke('permissions:respond', requestId, optionId),
