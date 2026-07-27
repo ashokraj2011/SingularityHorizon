@@ -88,9 +88,20 @@ function createWindow(): void {
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     console.error('[renderer] process gone:', details.reason)
   })
-  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-    if (level >= 2) console.error(`[renderer] ${message} (${sourceId}:${line})`)
-  })
+  const onConsoleMessage = (_event: unknown, details: {
+    level: 'verbose' | 'info' | 'warning' | 'error'
+    message: string
+    sourceId: string
+    lineNumber: number
+  }): void => {
+    if (details.level === 'warning' || details.level === 'error') {
+      console.error(`[renderer] ${details.message} (${details.sourceId}:${details.lineNumber})`)
+    }
+  }
+  // Electron 43 passes one details object. The upstream standalone still
+  // typechecks against Electron 33, whose declaration exposes the deprecated
+  // five-argument callback, so keep the runtime-correct two-argument handler.
+  mainWindow.webContents.on('console-message', onConsoleMessage as never)
   setTimeout(reveal, 4000)
 
   // External links open in the real browser, never inside the app shell.

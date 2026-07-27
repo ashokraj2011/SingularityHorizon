@@ -303,7 +303,22 @@ export const useStore = create<StoreState>((set, get) => ({
   setConfigOption: async (optionId, value, sessionId) => {
     const target = sessionId ?? get().activeId
     if (!target) return
-    await getApi().setConfigOption(target, optionId, value)
+    try {
+      await getApi().setConfigOption(target, optionId, value)
+    } catch (error) {
+      const current = get().sessions[target]
+      if (!current) return
+      const detail = error instanceof Error ? error.message : String(error)
+      set({
+        sessions: {
+          ...get().sessions,
+          [target]: {
+            ...current,
+            lastError: `Unable to change ${optionId}: ${detail}`
+          }
+        }
+      })
+    }
   },
 
   answerPermission: async (requestId, optionId) => {

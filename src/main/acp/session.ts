@@ -297,7 +297,9 @@ export class AgentSession extends EventEmitter {
     if (!this.peer || !acpSessionId) return
     await this.peer.request('session/set_config_option', {
       sessionId: acpSessionId,
-      optionId,
+      // ACP names this field configId. `optionId` was accepted by our local
+      // TypeScript shape but rejected by the agent's runtime schema (-32602).
+      configId: optionId,
       value
     })
     // Optimistic: the agent also broadcasts config_option_update, but updating

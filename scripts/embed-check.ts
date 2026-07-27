@@ -25,6 +25,7 @@ const ok = (n: string, p: boolean, d?: string): void => {
 /* ------------------------------------------------ a host with no runtime */
 
 const calls: string[] = []
+let rejectConfigChange = false
 let emit: (e: MainEvent) => void = () => {}
 
 function makeSession(id: string, cwd: string): SessionSnapshot {
@@ -109,6 +110,7 @@ const fakeApi: AcpStudioApi = {
     skill: { name, description: '', source: 'repo', path: '/fake' }
   }),
   setConfigOption: async (sessionId, optionId, value) => {
+    if (rejectConfigChange) throw new Error('Invalid params')
     calls.push(`config:${optionId}=${value}`)
     emit({
       type: 'session:patch',
@@ -261,6 +263,12 @@ ok('config change reached the host', calls.includes('config:model=fake-2'))
 ok(
   'config patch applied to the snapshot',
   useStore.getState().sessions.s1?.configOptions[0]?.currentValue === 'fake-2'
+)
+rejectConfigChange = true
+await useStore.getState().setConfigOption('model', 'fake-1')
+ok(
+  'config rejection is shown in the session instead of becoming an unhandled promise',
+  useStore.getState().sessions.s1?.lastError === 'Unable to change model: Invalid params'
 )
 
 /* teardown */
