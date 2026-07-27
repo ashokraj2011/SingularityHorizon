@@ -87,6 +87,8 @@ export type SessionStatus = 'starting' | 'idle' | 'busy' | 'error' | 'exited'
 
 export interface SessionSummary {
   id: string
+  /** Tool profile the agent was spawned with; fixed for the session's life. */
+  toolProfile?: string
   /** ACP sessionId assigned by the agent; absent until session/new resolves. */
   acpSessionId?: string
   title: string
@@ -134,6 +136,20 @@ export interface AgentDefinition {
   command: string
   args: string[]
   env?: Record<string, string>
+  /** Which tool profile produced `args`; set by resolveAgent. */
+  toolProfile?: string
+}
+
+/**
+ * A spawn-time tradeoff between agent capability and per-request context cost.
+ * Tool definitions are re-sent on every request, so trimming them compounds.
+ */
+export interface ToolProfileInfo {
+  id: string
+  name: string
+  description: string
+  /** Measured fixed overhead in tokens — see src/main/agents.ts for method. */
+  measuredOverhead?: number
 }
 
 /* --------------------------------------------------------------- events */
@@ -158,7 +174,12 @@ export interface DirEntry {
 export interface AcpStudioApi {
   listAgents(): Promise<AgentDefinition[]>
   listSessions(): Promise<SessionSnapshot[]>
-  createSession(opts: { cwd: string; agentId: string }): Promise<SessionSnapshot>
+  listToolProfiles(): Promise<ToolProfileInfo[]>
+  createSession(opts: {
+    cwd: string
+    agentId: string
+    toolProfile?: string
+  }): Promise<SessionSnapshot>
   closeSession(sessionId: string): Promise<void>
   /** Close a session and open a fresh one on the same cwd with the same agent. */
   restartSession(sessionId: string): Promise<SessionSnapshot | null>

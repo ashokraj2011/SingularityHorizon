@@ -1,5 +1,17 @@
-import type { SessionConfigOption } from '@shared/acp'
+import type { ConfigOptionChoice, SessionConfigOption } from '@shared/acp'
 import { useStore } from '../store'
+
+/**
+ * Copilot reports a billing multiplier per model in `_meta.copilotUsage`
+ * ("0.33x" for Haiku, "15x" for Opus — a 45x spread). Copilot bills premium
+ * requests rather than tokens, so this multiplier, not context size, is what
+ * actually shows up on the bill. It was already on the wire and invisible;
+ * showing it makes the expensive choice a deliberate one.
+ */
+function costSuffix(choice: ConfigOptionChoice): string {
+  const usage = choice._meta?.copilotUsage
+  return typeof usage === 'string' && usage !== '1x' ? `  ·  ${usage}` : ''
+}
 
 /**
  * A single agent-declared config option rendered as a native select.
@@ -31,6 +43,7 @@ export function ConfigPicker({
       {option.options.map((choice) => (
         <option key={choice.value} value={choice.value}>
           {prefix ? `${prefix}${choice.name}` : choice.name}
+          {costSuffix(choice)}
         </option>
       ))}
     </select>

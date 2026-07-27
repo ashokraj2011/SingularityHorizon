@@ -30,6 +30,7 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Attachments** — `+` adds files or folders. Files are embedded as ACP `resource` blocks (binaries referenced by path, oversized files truncated with disclosure); folders attach as a bounded listing. What was sent is recorded on the message.
 - **Context meter** — live context-window usage with a full breakdown, plus session token totals.
 - **Session actions** — compact the conversation, inspect or toggle agent memory, or start a fresh session on the same folder.
+- **Tool profiles** — trade agent breadth for context. Measured: a 71% cut in per-request overhead (see below).
 - **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
 
@@ -146,6 +147,33 @@ URI that exists nowhere on disk: Copilot materializes it to a temp file and read
 verified in `attach:check` by attaching a file outside the session's cwd containing a marker
 that no tool could otherwise find, and asserting the model reports it back.
 
+**Most of a session's context is spent before you type anything.** Measured on a fresh Copilot
+session, via `/context` after one message:
+
+| | System Prompt | System Tools | MCP Tools | Fixed overhead |
+| --- | --- | --- | --- | --- |
+| Full (default) | 5.8k | 8.1k | 0.9k | **14,739** |
+| No MCP | 5.5k | 8.1k | 0 | 13,600 |
+| Lean (`bash,view`) | 3.4k | 0.9k | 0 | **4,306** |
+| Minimal (`bash`) | 3.5k | 0.6k | 0 | 4,068 |
+
+Tool definitions are re-sent on every request, so this is a per-request cost, not a one-off.
+Lean cuts it by **71% — about 10.4k tokens per request**. The system prompt shrinks alongside
+the tools because it describes them, so the saving compounds.
+
+This is a real tradeoff, not free money: `bash` alone can do most of what a shell can, but the
+agent loses purpose-built editing and search and may burn extra turns reimplementing them. Full
+stays the default; the lean profiles are for long sessions where context pressure outweighs
+breadth. Because these are spawn flags with no ACP equivalent, the choice is fixed for a
+session's lifetime — `restartSession` deliberately carries it over rather than silently
+re-inflating to Full.
+
+**Token size and billing are different things.** Copilot bills premium requests with a
+per-model multiplier, not tokens — Haiku 0.33x against Opus 15x is a 45x spread, and it was
+already on the wire in `_meta.copilotUsage` while being invisible in the UI. The model picker
+now shows it. Tool profiles reduce *context pressure* and latency; the model multiplier is what
+moves the bill.
+
 ## Verifying
 
 ```bash
@@ -154,6 +182,9 @@ npm run smoke              # one real prompt turn, end to end
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent
+npm run profile:check      # tool-profile flags reach spawn AND measurably reduce overhead
+npm run embed:check        # the UI runs with no Electron, no agent, no filesystem
+npm run guard              # the UI has not re-coupled itself to Electron
 ```
 
 Spawns the real agent, runs a prompt that forces a tool call, auto-approves the permission

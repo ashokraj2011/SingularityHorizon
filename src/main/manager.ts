@@ -17,8 +17,12 @@ export class SessionManager extends EventEmitter {
     return [...this.sessions.values()].map((s) => s.getSnapshot())
   }
 
-  async create(cwd: string, agentId: string): Promise<SessionSnapshot> {
-    const agent = await resolveAgent(agentId)
+  async create(
+    cwd: string,
+    agentId: string,
+    toolProfile?: string
+  ): Promise<SessionSnapshot> {
+    const agent = await resolveAgent(agentId, toolProfile)
     const session = new AgentSession(agent, cwd)
 
     session.on('event', (event: MainEvent) => {
@@ -80,7 +84,9 @@ export class SessionManager extends EventEmitter {
     if (!existing) return null
     const { cwd, agent } = existing
     this.close(sessionId)
-    return this.create(cwd, agent.id)
+    // Carry the tool profile over — restarting is meant to clear context, not
+    // silently re-inflate it back to the full toolset.
+    return this.create(cwd, agent.id, agent.toolProfile)
   }
 
   cancel(sessionId: string): void {

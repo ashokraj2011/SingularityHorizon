@@ -10,6 +10,7 @@ import type { AcpStudioApi, MainEvent } from '../shared/ipc'
 const api: AcpStudioApi = {
   listAgents: () => ipcRenderer.invoke('agents:list'),
   listSessions: () => ipcRenderer.invoke('sessions:list'),
+  listToolProfiles: () => ipcRenderer.invoke('agents:toolProfiles'),
   createSession: (opts) => ipcRenderer.invoke('sessions:create', opts),
   closeSession: (sessionId) => ipcRenderer.invoke('sessions:close', sessionId),
   restartSession: (sessionId) => ipcRenderer.invoke('sessions:restart', sessionId),

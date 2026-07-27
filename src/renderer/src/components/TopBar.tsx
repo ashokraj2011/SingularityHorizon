@@ -64,6 +64,15 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
         </button>
       )}
 
+      {session.toolProfile && session.toolProfile !== 'full' && (
+        <span
+          className="pill"
+          title="Tool profile chosen when this session started. Fixed for its lifetime — start a new session to change it."
+        >
+          {session.toolProfile}
+        </span>
+      )}
+
       {allowAllOption && (
         <button
           className={`pill toggle ${allowAllOn ? 'on' : ''}`}

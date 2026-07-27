@@ -56,8 +56,13 @@ function makeSession(id: string, cwd: string): SessionSnapshot {
 const fakeApi: AcpStudioApi = {
   listAgents: async () => [{ id: 'fake', name: 'Fake Agent', command: 'fake', args: [] }],
   listSessions: async () => [],
-  createSession: async ({ cwd }) => {
-    const s = makeSession('s1', cwd)
+  listToolProfiles: async () => [
+    { id: 'full', name: 'Full', description: 'everything', measuredOverhead: 14839 },
+    { id: 'lean', name: 'Lean', description: 'bash + view', measuredOverhead: 4306 }
+  ],
+  createSession: async ({ cwd, toolProfile }) => {
+    calls.push(`createSession:${toolProfile ?? 'default'}`)
+    const s = { ...makeSession('s1', cwd), toolProfile }
     emit({ type: 'session:created', session: s })
     return s
   },
@@ -159,8 +164,12 @@ fakeApi.onEvent(store.applyEvent)
 await store.bootstrap()
 ok('bootstrap loaded agents from the host', useStore.getState().agents.length === 1)
 
-await store.newSession('/fake/project', 'fake')
+ok('tool profiles loaded from the host', useStore.getState().toolProfiles.length === 2)
+
+await store.newSession('/fake/project', 'fake', 'lean')
 const created = useStore.getState()
+ok('tool profile reached the host on create', calls.includes('createSession:lean'))
+ok('tool profile recorded on the session', created.sessions.s1?.toolProfile === 'lean')
 ok('session created and became active', created.activeId === 's1')
 ok('session title derived from cwd', created.sessions.s1?.title === 'project')
 ok('skills loaded for the new session', (created.skills.s1?.length ?? 0) === 1)

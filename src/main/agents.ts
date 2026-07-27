@@ -73,6 +73,72 @@ export async function which(command: string): Promise<string | null> {
 }
 
 /**
+ * Tool profiles trade agent capability for context.
+ *
+ * Tool definitions are re-sent on every request and dominate a session's fixed
+ * cost. Measured against Copilot 1.0.75 (`/context` after one message, same
+ * cwd, same model):
+ *
+ *   full          System Prompt 5.8k + Tools 8.1k + MCP 0.9k  = 14,839
+ *   no MCP        System Prompt 5.5k + Tools 8.1k + MCP   0   = 13,600
+ *   lean          System Prompt 3.4k + Tools 0.9k + MCP   0   =  4,306
+ *   minimal       System Prompt 3.5k + Tools 0.6k + MCP   0   =  4,068
+ *
+ * Lean is a 71% cut in per-request overhead. The system prompt shrinks too,
+ * because it describes the available tools — the saving compounds.
+ *
+ * These are spawn flags, not session config: ACP has no way to change them on
+ * a live session, so the choice is made when the session is created.
+ *
+ * Restricting tools is a real capability tradeoff, not free money. `bash` alone
+ * can do most things a shell can, but the agent loses purpose-built file
+ * editing and search, and may burn extra turns reimplementing them. Full is the
+ * default for that reason; the leaner profiles are for long sessions where
+ * context pressure matters more than breadth.
+ */
+export interface ToolProfile {
+  id: string
+  name: string
+  description: string
+  extraArgs: string[]
+  /** Measured fixed overhead in tokens, for display. */
+  measuredOverhead?: number
+}
+
+export const TOOL_PROFILES: ToolProfile[] = [
+  {
+    id: 'full',
+    name: 'Full',
+    description: 'Every tool the agent ships with. Most capable, largest context cost.',
+    extraArgs: [],
+    measuredOverhead: 14839
+  },
+  {
+    id: 'no-mcp',
+    name: 'No MCP',
+    description: 'Built-in tools, but no MCP servers. Small saving, no capability loss.',
+    extraArgs: ['--disable-builtin-mcps'],
+    measuredOverhead: 13600
+  },
+  {
+    id: 'lean',
+    name: 'Lean (bash + view)',
+    description: 'Shell and file reading only. ~71% less fixed overhead per request.',
+    extraArgs: ['--available-tools=bash,view', '--disable-builtin-mcps'],
+    measuredOverhead: 4306
+  },
+  {
+    id: 'minimal',
+    name: 'Minimal (bash)',
+    description: 'Shell only. Smallest footprint; the agent must do everything through it.',
+    extraArgs: ['--available-tools=bash', '--disable-builtin-mcps'],
+    measuredOverhead: 4068
+  }
+]
+
+export const DEFAULT_TOOL_PROFILE = 'full'
+
+/**
  * Built-in agent presets. ACP is agent-agnostic, so anything that speaks it
  * over stdio works here — Copilot is just the default.
  */
@@ -108,7 +174,10 @@ export async function availableAgents(): Promise<AgentDefinition[]> {
     .map(({ agent, bin }) => ({ ...agent, command: bin ?? agent.command }))
 }
 
-export async function resolveAgent(agentId: string): Promise<AgentDefinition> {
+export async function resolveAgent(
+  agentId: string,
+  toolProfileId: string = DEFAULT_TOOL_PROFILE
+): Promise<AgentDefinition> {
   const preset = BUILTIN_AGENTS.find((a) => a.id === agentId)
   if (!preset) throw new Error(`Unknown agent: ${agentId}`)
   const bin = await which(preset.command)
@@ -117,5 +186,18 @@ export async function resolveAgent(agentId: string): Promise<AgentDefinition> {
       `Could not find "${preset.command}" on your PATH. Install it, or make sure it is on the PATH of your login shell.`
     )
   }
-  return { ...preset, command: bin, env: { ...preset.env, PATH: await resolvedPath() } }
+
+  // Tool-restriction flags are Copilot's. Applying them to another agent would
+  // make it fail to launch on an unknown argument, so they are opt-in per agent.
+  const profile = TOOL_PROFILES.find((p) => p.id === toolProfileId)
+  const extraArgs =
+    preset.id === 'copilot' && profile ? profile.extraArgs : []
+
+  return {
+    ...preset,
+    command: bin,
+    args: [...preset.args, ...extraArgs],
+    toolProfile: profile?.id ?? DEFAULT_TOOL_PROFILE,
+    env: { ...preset.env, PATH: await resolvedPath() }
+  }
 }

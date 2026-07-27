@@ -32,10 +32,11 @@
     "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=cjs --target=node22 --outfile=out/smoke.cjs --log-level=error && node out/smoke.cjs",
     "skills:check": "esbuild scripts/skills-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --outfile=out/skills-check.mjs --log-level=error && node out/skills-check.mjs",
     "context:check": "esbuild scripts/context-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/context-check.mjs --log-level=error && node out/context-check.mjs",
+    "profile:check": "esbuild scripts/profile-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/profile-check.mjs --log-level=error && node out/profile-check.mjs",
     "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
     "guard": "sh scripts/guard-coupling.sh",
     "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
-    "check": "npm run guard && npm run typecheck && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run attach:check",
+    "check": "npm run guard && npm run typecheck && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run profile:check && npm run attach:check",
     "dist": "electron-vite build && electron-builder"
   },
   "dependencies": {

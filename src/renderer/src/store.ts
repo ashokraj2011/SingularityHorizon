@@ -6,7 +6,8 @@ import type {
   AttachmentSummary,
   MainEvent,
   SessionSnapshot,
-  SkillInfo
+  SkillInfo,
+  ToolProfileInfo
 } from '@shared/ipc'
 import { getApi } from './api'
 import { resolveSkillInvocation } from './slashMenu'
@@ -31,7 +32,8 @@ interface StoreState {
 
   bootstrap: () => Promise<void>
   applyEvent: (event: MainEvent) => void
-  newSession: (cwd: string, agentId: string) => Promise<void>
+  newSession: (cwd: string, agentId: string, toolProfile?: string) => Promise<void>
+  toolProfiles: ToolProfileInfo[]
   closeSession: (id: string) => Promise<void>
   setActive: (id: string) => void
   send: (text: string) => Promise<void>
@@ -45,6 +47,7 @@ export const useStore = create<StoreState>((set, get) => ({
   order: [],
   activeId: null,
   agents: [],
+  toolProfiles: [],
   skills: {},
   attachments: {},
   launching: false,
@@ -62,12 +65,14 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   bootstrap: async () => {
-    const [agents, sessions] = await Promise.all([
+    const [agents, sessions, toolProfiles] = await Promise.all([
       getApi().listAgents(),
-      getApi().listSessions()
+      getApi().listSessions(),
+      getApi().listToolProfiles()
     ])
     set({
       agents,
+      toolProfiles,
       sessions: Object.fromEntries(sessions.map((s) => [s.id, s])),
       order: sessions.map((s) => s.id),
       activeId: sessions[0]?.id ?? null
@@ -135,10 +140,10 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  newSession: async (cwd, agentId) => {
+  newSession: async (cwd, agentId, toolProfile) => {
     set({ launching: true, launchError: null })
     try {
-      await getApi().createSession({ cwd, agentId })
+      await getApi().createSession({ cwd, agentId, toolProfile })
     } catch (err) {
       set({ launchError: (err as Error).message })
     } finally {

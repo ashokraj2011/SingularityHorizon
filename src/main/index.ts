@@ -5,7 +5,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 import type { DirEntry, MainEvent, PromptRequest } from '../shared/ipc'
-import { availableAgents } from './agents'
+import { availableAgents, TOOL_PROFILES } from './agents'
 import { statPaths } from './attachments'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
@@ -81,8 +81,16 @@ function handle(channel: string, fn: (...args: any[]) => any): void {
 
 handle('agents:list', () => availableAgents())
 handle('sessions:list', () => manager.list())
-handle('sessions:create', (opts: { cwd: string; agentId: string }) =>
-  manager.create(opts.cwd, opts.agentId)
+handle('agents:toolProfiles', () =>
+  TOOL_PROFILES.map(({ id, name, description, measuredOverhead }) => ({
+    id,
+    name,
+    description,
+    measuredOverhead
+  }))
+)
+handle('sessions:create', (opts: { cwd: string; agentId: string; toolProfile?: string }) =>
+  manager.create(opts.cwd, opts.agentId, opts.toolProfile)
 )
 handle('sessions:close', (sessionId: string) => manager.close(sessionId))
 handle('sessions:prompt', (sessionId: string, request: PromptRequest) =>

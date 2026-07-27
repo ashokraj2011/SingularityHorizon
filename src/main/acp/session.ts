@@ -69,6 +69,7 @@ export class AgentSession extends EventEmitter {
       title: basename(cwd) || cwd,
       cwd,
       agentId: agent.id,
+      toolProfile: agent.toolProfile,
       status: 'starting',
       createdAt: Date.now(),
       blocks: [],

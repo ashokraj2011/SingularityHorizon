@@ -11,6 +11,10 @@ export function App(): React.JSX.Element {
   const { bootstrap, applyEvent, agents, newSession, launching, launchError, cancel } = useStore()
   const session = useActiveSession()
   const [agentId, setAgentId] = useState('copilot')
+  // Tool profile is a spawn flag, so it must be chosen before the session
+  // exists — it cannot be changed on a live one.
+  const [toolProfile, setToolProfile] = useState('full')
+  const toolProfiles = useStore((s) => s.toolProfiles)
 
   useEffect(() => {
     void bootstrap()
@@ -20,8 +24,8 @@ export function App(): React.JSX.Element {
   const startSession = useCallback(async () => {
     const dir = await getApi().pickDirectory()
     if (!dir) return
-    await newSession(dir, agentId)
-  }, [agentId, newSession])
+    await newSession(dir, agentId, toolProfile)
+  }, [agentId, toolProfile, newSession])
 
   // Esc interrupts the running turn from anywhere in the window.
   useEffect(() => {
@@ -69,10 +73,38 @@ export function App(): React.JSX.Element {
                     </option>
                   ))}
                 </select>
+                {agentId === 'copilot' && toolProfiles.length > 0 && (
+                  <select
+                    className="select"
+                    style={{ maxWidth: 220 }}
+                    title={
+                      toolProfiles.find((p) => p.id === toolProfile)?.description ??
+                      'How many tools the agent gets'
+                    }
+                    value={toolProfile}
+                    onChange={(e) => setToolProfile(e.target.value)}
+                  >
+                    {toolProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.measuredOverhead
+                          ? ` · ~${Math.round(p.measuredOverhead / 1000)}k`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button className="btn primary" onClick={startSession} disabled={launching}>
                   {launching ? 'Starting…' : 'Open a folder'}
                 </button>
               </div>
+              {agentId === 'copilot' && (
+                <p style={{ fontSize: 12, color: 'var(--text-faint)', maxWidth: 470 }}>
+                  {toolProfiles.find((p) => p.id === toolProfile)?.description}
+                  {toolProfile !== 'full' &&
+                    ' Tool definitions are re-sent every request, so this compounds — at the cost of what the agent can do directly.'}
+                </p>
+              )}
               {launchError && (
                 <div className="notice error" style={{ maxWidth: 520 }}>
                   {launchError}
