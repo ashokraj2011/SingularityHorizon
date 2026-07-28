@@ -33,18 +33,18 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "smoke": "esbuild scripts/smoke.ts --bundle --platform=node --format=cjs --target=node22 --outfile=out/smoke.cjs --log-level=error && node out/smoke.cjs",
     "skills:check": "esbuild scripts/skills-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --outfile=out/skills-check.mjs --log-level=error && node out/skills-check.mjs",
-    "context:check": "esbuild scripts/context-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/context-check.mjs --log-level=error && node out/context-check.mjs",
+    "context:check": "esbuild scripts/context-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/context-check.mjs --log-level=error && node out/context-check.mjs",
     "profile:check": "esbuild scripts/profile-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/profile-check.mjs --log-level=error && node out/profile-check.mjs",
     "index:check": "esbuild scripts/index-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/index-check.mjs --log-level=error && node out/index-check.mjs",
     "outline:check": "esbuild scripts/outline-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/outline-check.mjs --log-level=error && node out/outline-check.mjs",
-    "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
+    "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
     "guard": "sh scripts/guard-coupling.sh",
-    "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
+    "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --external:typescript --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
     "check": "npm run guard && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run provider:check && npm run profile:check && npm run attach:check",
     "dist": "electron-vite build && electron-builder",
     "provider:check": "esbuild scripts/provider-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/provider-check.mjs --log-level=error && node out/provider-check.mjs",
-    "contract:check": "esbuild scripts/contract-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/contract-check.mjs --log-level=error && node out/contract-check.mjs",
-    "persist:check": "esbuild scripts/persist-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/persist-check.mjs --log-level=error && node out/persist-check.mjs"
+    "contract:check": "esbuild scripts/contract-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/contract-check.mjs --log-level=error && node out/contract-check.mjs",
+    "persist:check": "esbuild scripts/persist-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/persist-check.mjs --log-level=error && node out/persist-check.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0"
