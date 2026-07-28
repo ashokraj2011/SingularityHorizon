@@ -23,6 +23,7 @@ const api: AcpStudioApi = {
   pickFiles: () => ipcRenderer.invoke('dialog:pickFiles'),
   statPaths: (paths) => ipcRenderer.invoke('fs:statPaths', paths),
   describeRepo: (workingDir) => ipcRenderer.invoke('repo:describe', workingDir),
+  preferredToolProfile: (repoRoot) => ipcRenderer.invoke('prefs:toolProfile', repoRoot),
   refreshAstIndex: (repoRoot) => ipcRenderer.invoke('ast:refresh', repoRoot),
   rebuildAstIndex: (repoRoot) => ipcRenderer.invoke('ast:rebuild', repoRoot),
   searchSymbols: (repoRoot, query) => ipcRenderer.invoke('ast:search', repoRoot, query),

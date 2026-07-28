@@ -10,6 +10,8 @@ export interface SlashItem {
   insert: string
   /** True when this client expands the skill locally before sending. */
   local: boolean
+  /** Present when accepting should attach a symbol instead of typing text. */
+  symbol?: import('@shared/ipc').SymbolHit
 }
 
 /**

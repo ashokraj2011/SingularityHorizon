@@ -166,6 +166,7 @@ const fakeApi: AcpStudioApi = {
     isGit: true,
     providers: []
   }),
+  preferredToolProfile: async () => 'lean',
   refreshAstIndex: async () => ({
     files: 2,
     symbols: 7,

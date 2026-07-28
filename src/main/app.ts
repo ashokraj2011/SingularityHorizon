@@ -17,6 +17,7 @@ import { extractSymbol } from './ast/outline'
 import { statPaths } from './attachments'
 import { loadProvidersFromEnv } from './providers/load'
 import { registeredProviders } from './providers/registry'
+import { preferredToolProfile, rememberToolProfile } from './prefs'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
@@ -157,11 +158,17 @@ handle('agents:toolProfiles', () =>
     measuredOverhead
   }))
 )
-handle('sessions:create', (opts: { cwd: string; agentId: string; toolProfile?: string }) =>
-  manager.create(opts.cwd, opts.agentId, opts.toolProfile, {
+handle('sessions:create', async (opts: { cwd: string; agentId: string; toolProfile?: string }) => {
+  // Remember the choice against the repo so the next session on it starts the
+  // same way — the saving is worthless if it has to be re-selected every time.
+  const repo = await discoverRepo(opts.cwd).catch(() => null)
+  const profile = opts.toolProfile ?? (await preferredToolProfile(repo?.root))
+  if (profile) void rememberToolProfile(profile, repo?.root)
+  return manager.create(opts.cwd, opts.agentId, profile, {
     hostContext: getHostContext(opts.cwd)
   })
-)
+})
+handle('prefs:toolProfile', (repoRoot?: string) => preferredToolProfile(repoRoot))
 handle('sessions:close', (sessionId: string) => manager.close(sessionId))
 handle('sessions:prompt', (sessionId: string, request: PromptRequest) =>
   manager.prompt(sessionId, request)

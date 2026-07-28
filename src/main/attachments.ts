@@ -23,6 +23,14 @@ import { isOutlineSupported, outlineFile, renderOutline } from './ast/outline'
 
 /** Per-file embed cap. Generous enough for source files, small enough to be safe. */
 const MAX_FILE_BYTES = 256 * 1024
+/**
+ * Above this, a parseable file is outlined rather than sent whole unless the
+ * user says otherwise. Chosen because outlining a small file saves little and
+ * costs the agent the implementation it probably wanted; on a large one the
+ * saving is 75-90%. Unlike restricting tools this is not a capability loss —
+ * the agent can still read the body with its own tools whenever it needs it.
+ */
+const OUTLINE_DEFAULT_BYTES = 12 * 1024
 /** Total across all attachments in one prompt. */
 const MAX_TOTAL_BYTES = 1024 * 1024
 /** Directory listing bounds. */
@@ -270,6 +278,14 @@ async function buildFolder(
       truncated: truncated || undefined
     }
   }
+}
+
+/**
+ * Whether a freshly-attached file should default to outline mode.
+ * Exported so the UI and the sender agree on one rule.
+ */
+export function shouldDefaultToOutline(path: string, bytes: number | undefined): boolean {
+  return isOutlineSupported(path) && (bytes ?? 0) >= OUTLINE_DEFAULT_BYTES
 }
 
 /** Cheap metadata for the attachment chips, before anything is sent. */

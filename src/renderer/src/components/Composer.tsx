@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { AttachmentSummary, SessionSnapshot, SkillInfo } from '@shared/ipc'
+import type { AttachmentSummary, SessionSnapshot, SkillInfo, SymbolHit } from '@shared/ipc'
 import { getApi } from '../api'
 import { useStore } from '../store'
 import { buildSlashItems, type SlashItem } from '../slashMenu'
@@ -23,6 +23,7 @@ type MenuItem = SlashItem
 export function Composer({ session }: { session: SessionSnapshot }): React.JSX.Element {
   const [text, setText] = useState('')
   const [fileMatches, setFileMatches] = useState<string[]>([])
+  const [symbolMatches, setSymbolMatches] = useState<SymbolHit[]>([])
   const [selected, setSelected] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const send = useStore((s) => s.send)
@@ -32,6 +33,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
   const addAttachments = useStore((s) => s.addAttachments)
   const removeAttachment = useStore((s) => s.removeAttachment)
   const setAttachmentMode = useStore((s) => s.setAttachmentMode)
+  const attachSymbol = useStore((s) => s.attachSymbol)
   const [attachOpen, setAttachOpen] = useState(false)
   const attachRef = useRef<HTMLDivElement>(null)
 
@@ -57,6 +59,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
   useEffect(() => {
     if (token?.kind !== 'file') {
       setFileMatches([])
+      setSymbolMatches([])
       return
     }
     let cancelled = false
@@ -65,6 +68,17 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
         .searchFiles(session.cwd, token.query)
         .then((files) => !cancelled && setFileMatches(files))
         .catch(() => !cancelled && setFileMatches([]))
+      // Symbols come from the persisted AST index, so this is a warm lookup
+      // (~2ms) rather than a crawl. Attaching one sends just that declaration
+      // instead of the file that contains it.
+      if (token.query.length >= 2) {
+        getApi()
+          .searchSymbols(session.cwd, token.query)
+          .then((hits) => !cancelled && setSymbolMatches(hits.slice(0, 8)))
+          .catch(() => !cancelled && setSymbolMatches([]))
+      } else {
+        setSymbolMatches([])
+      }
     }, 90)
     return () => {
       cancelled = true
@@ -77,7 +91,18 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
     if (token.kind === 'slash') {
       return buildSlashItems(session.commands, skills, token.query)
     }
-    return fileMatches.slice(0, 40).map((path) => {
+    const symbolItems: MenuItem[] = symbolMatches.map((h) => ({
+      key: `sym:${h.path}:${h.line}:${h.name}`,
+      label: h.container ? `${h.container}.${h.name}` : h.name,
+      description: `${h.kind} · ${h.path}:${h.line}`,
+      badge: 'symbol',
+      insert: '',
+      local: true,
+      symbol: h
+    }))
+    return [...symbolItems, ...fileMatches.slice(0, 32)].slice(0, 40).map((entry) => {
+      if (typeof entry !== 'string') return entry
+      const path = entry
       const rel = path.startsWith(session.cwd + '/')
         ? path.slice(session.cwd.length + 1)
         : path
@@ -89,7 +114,7 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
         local: false
       }
     })
-  }, [token, session.commands, skills, fileMatches, session.cwd])
+  }, [token, session.commands, skills, fileMatches, symbolMatches, session.cwd])
 
   useEffect(() => setSelected(0), [items.length, token?.kind])
 
@@ -97,6 +122,15 @@ export function Composer({ session }: { session: SessionSnapshot }): React.JSX.E
 
   const accept = (item: MenuItem): void => {
     if (!token) return
+    // A symbol is attached rather than typed: the point is to send that one
+    // declaration as context, not to paste its name into the message.
+    if (item.symbol) {
+      void attachSymbol(session.cwd, item.symbol.path, item.symbol.name)
+      setText(text.slice(0, token.start) + text.slice(token.end))
+      setSymbolMatches([])
+      requestAnimationFrame(() => textareaRef.current?.focus())
+      return
+    }
     setText(text.slice(0, token.start) + item.insert + text.slice(token.end))
     requestAnimationFrame(() => textareaRef.current?.focus())
   }

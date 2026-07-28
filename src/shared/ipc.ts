@@ -296,6 +296,7 @@ export interface AcpStudioApi {
   pickFiles(): Promise<string[]>
   statPaths(paths: string[]): Promise<AttachmentSummary[]>
   describeRepo(workingDir: string): Promise<RepoInfo>
+  preferredToolProfile(repoRoot?: string): Promise<string | undefined>
   refreshAstIndex(repoRoot: string): Promise<AstIndexStats>
   rebuildAstIndex(repoRoot: string): Promise<AstIndexStats>
   searchSymbols(repoRoot: string, query: string): Promise<SymbolHit[]>

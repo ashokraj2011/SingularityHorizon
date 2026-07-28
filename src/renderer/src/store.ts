@@ -13,6 +13,13 @@ import type {
 import { getApi } from './api'
 import { resolveSkillInvocation } from './slashMenu'
 
+/** Mirrors the main process rule; kept in sync by attach:check. */
+const OUTLINE_DEFAULT_BYTES = 12 * 1024
+const OUTLINE_EXT = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/i
+function defaultsToOutline(path: string, bytes?: number): boolean {
+  return OUTLINE_EXT.test(path) && (bytes ?? 0) >= OUTLINE_DEFAULT_BYTES
+}
+
 interface StoreState {
   sessions: Record<string, SessionSnapshot>
   order: string[]
@@ -29,6 +36,7 @@ interface StoreState {
   loadSkills: (sessionId: string) => Promise<void>
   addAttachments: (kind: 'file' | 'folder', mode?: AttachmentMode) => Promise<void>
   setAttachmentMode: (path: string, mode: AttachmentMode) => void
+  attachSymbol: (repoRoot: string, path: string, name: string) => Promise<void>
   removeAttachment: (path: string) => void
   refreshContext: () => Promise<void>
   restartSession: () => Promise<void>
@@ -235,8 +243,13 @@ export const useStore = create<StoreState>((set, get) => ({
         : await getApi().pickDirectory().then((d) => (d ? [d] : []))
     if (!paths.length) return
 
+    // An explicit choice wins; otherwise large parseable files start as
+    // outlines. Outlining costs no capability — the agent can still read the
+    // body — so defaulting it is the one token saving with no downside.
     const summaries = (await getApi().statPaths(paths)).map((s) =>
-      s.kind === 'file' ? { ...s, mode: mode ?? 'full' } : s
+      s.kind === 'file'
+        ? { ...s, mode: mode ?? (defaultsToOutline(s.path, s.bytes) ? 'outline' : 'full') }
+        : s
     )
     const existing = get().attachments[activeId] ?? []
     const seen = new Set(existing.map((a) => a.path))
@@ -246,6 +259,16 @@ export const useStore = create<StoreState>((set, get) => ({
         [activeId]: [...existing, ...summaries.filter((s) => !seen.has(s.path))]
       }
     })
+  },
+
+  attachSymbol: async (repoRoot, path, name) => {
+    const { activeId } = get()
+    if (!activeId) return
+    const summary = await getApi().attachSymbol(repoRoot, path, name)
+    if (!summary) return
+    const existing = get().attachments[activeId] ?? []
+    if (existing.some((a) => a.path === summary.path && a.name === summary.name)) return
+    set({ attachments: { ...get().attachments, [activeId]: [...existing, summary] } })
   },
 
   setAttachmentMode: (path, mode) => {

@@ -21,6 +21,15 @@ export function App(): React.JSX.Element {
     return getApi().onEvent(applyEvent)
   }, [bootstrap, applyEvent])
 
+  // Preselect whatever was last used, so opting into a leaner profile survives
+  // restarts instead of resetting to Full every launch.
+  useEffect(() => {
+    void getApi()
+      .preferredToolProfile()
+      .then((p) => p && setToolProfile(p))
+      .catch(() => {})
+  }, [])
+
   const startSession = useCallback(async () => {
     const dir = await getApi().pickDirectory()
     if (!dir) return

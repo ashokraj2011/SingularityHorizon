@@ -5,11 +5,11 @@
  *
  * Run with: npm run outline:check
  */
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { buildAttachments } from '../src/main/attachments'
+import { buildAttachments, shouldDefaultToOutline } from '../src/main/attachments'
 import { extractSymbol, outlineSource, renderOutline } from '../src/main/ast/outline'
 
 const checks: Array<[string, boolean, string?]> = []
@@ -104,6 +104,30 @@ ok('fallback is disclosed, not silent', pySummary?.outlineUnavailable === true)
 ok('exactly one summary per attachment', built.summaries.length === 2, String(built.summaries.length))
 const pyBlock = built.blocks.find((b) => b.type === 'resource' && 'text' in b.resource && b.resource.text.includes('PY_BODY_MARKER'))
 ok('unsupported file still sent in full', !!pyBlock)
+
+/* ------------------------- outline-by-default threshold agreement */
+
+const bigTs = join(dir, 'big-service.ts')
+writeFileSync(bigTs, SAMPLE + '\n'.padEnd(13 * 1024, '// filler\n'))
+const smallTs = join(dir, 'tiny.ts')
+writeFileSync(smallTs, 'export const a = 1\n')
+const bigMd = join(dir, 'notes.md')
+writeFileSync(bigMd, '#'.padEnd(20 * 1024, 'x'))
+
+ok('large parseable file defaults to outline', shouldDefaultToOutline(bigTs, statSync(bigTs).size))
+ok('small parseable file stays full', !shouldDefaultToOutline(smallTs, statSync(smallTs).size))
+ok('large unparseable file stays full', !shouldDefaultToOutline(bigMd, statSync(bigMd).size))
+ok('missing size never defaults to outline', !shouldDefaultToOutline(bigTs, undefined))
+
+// The renderer keeps its own copy of this rule so the chip can show the mode
+// before anything is sent. If the two drift, the UI promises one thing and the
+// sender does another.
+const storeSource = readFileSync(new URL('../src/renderer/src/store.ts', import.meta.url), 'utf8')
+const mainSource = readFileSync(new URL('../src/main/attachments.ts', import.meta.url), 'utf8')
+const rendererBytes = /OUTLINE_DEFAULT_BYTES = (\d+) \* 1024/.exec(storeSource)?.[1]
+const mainBytes = /OUTLINE_DEFAULT_BYTES = (\d+) \* 1024/.exec(mainSource)?.[1]
+ok('renderer and main agree on the threshold', !!mainBytes && rendererBytes === mainBytes,
+   `renderer ${rendererBytes} vs main ${mainBytes}`)
 
 console.log('\n--- results ---')
 let failed = 0
