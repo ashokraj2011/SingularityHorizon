@@ -230,6 +230,9 @@ export class AgentSession extends EventEmitter {
   }
 
   dispose(): void {
+    // Write the final state before tearing down, so a session closed mid-flight
+    // is not missing its last turn on disk.
+    this.persist()
     this.disposed = true
     if (this.flushTimer) clearInterval(this.flushTimer)
     for (const [, w] of this.permissionWaiters) w.resolve(null)
@@ -297,10 +300,13 @@ export class AgentSession extends EventEmitter {
         })
         if (initialContext) this.contextPending = false
         this.finalizeStreamingBlocks()
+        this.turns++
+        // Count the turn before flushing, not after: flushNow is what writes
+        // the index entry, so incrementing afterwards left `turns` permanently
+        // one behind — and stuck at zero for a session that ended here.
+        this.persistDirty = true
         this.flushNow()
         this.patch({ status: 'idle' })
-        this.turns++
-        this.persistDirty = true
         this.emitEvent({
           type: 'session:turnEnded',
           sessionId: this.id,
