@@ -150,6 +150,42 @@ agent without per-agent configuration. A per-session key can be passed in, so sp
 the session rather than to one shared credential. Standing the proxy up is an operational task —
 this is the seam, not the server.
 
+## Governed workflows
+
+A workflow is an IR, not a script: five node types, each carrying its own capability mode, tool
+profile, agent, budget, and — mandatorily — the effects it declares. Per-step policy is the point.
+An analyst runs `lean` and `explore`, so it *cannot* write whatever it decides it would like to;
+an implementer runs `full` and `edit` in an isolated worktree. Token profile and capability become
+workflow policy rather than a global setting somebody has to remember to change.
+
+Nothing runs until a workflow is **executable**: schema-valid, every node `SPEC_BOUND`, every budget
+set, every human gate role-assigned, every node declaring effects. That check is a validator, never
+a model — a gate that reads prose is a gate that can be argued with.
+
+**Exit conditions are calibrated claims, not booleans.** A loop exits when its claims are accepted,
+and a claim is evaluated *only* from signals this client captured itself — an exit code from a child
+process it spawned, a report file it parsed. A signal an agent produced is refused with its own
+reason. "The agent says the tests passed" is not evidence that the tests passed; it is evidence of
+the agent saying so.
+
+Each claim class carries a Beta posterior, so a class with a poor record needs more than one green
+run to clear its threshold. It updates on acceptance only: a failing check inside a repair loop is
+the expected path, not evidence the class is unreliable — counting it drove the posterior below its
+own threshold after one iteration and no loop could ever exit again. Learning that an acceptance was
+*wrong* needs a contradiction arriving later, which v1 has no way to observe.
+
+**Human gates bind content hashes.** An approval that named "the design" would still read as granted
+after the design was rewritten; `approvalStillValid()` returns false the moment the bytes change.
+
+**Checkpoints after every node.** A run killed mid-loop resumes from its frontier: the analyst and
+the implementer are not re-run, the approval is not re-requested, and the design's hash survives the
+restart.
+
+`npm run workflow:check` runs the hand-written golden path end to end against a toy repo through
+real ACP sessions — analyse → hash-bound gate → implement → verify loop over real exit codes → PR
+stub — then kills it mid-loop and resumes. The model is the only thing stubbed; a live one would
+make "resumed without re-running" an assertion about luck.
+
 ## Standalone, or embedded in your own app
 
 Both, from one codebase — they are not two modes. The UI imports no Electron and no Node, and
@@ -320,6 +356,7 @@ npm run check              # everything below, in order
 npm run smoke              # one real prompt turn, end to end
 npm run install:check      # registry config is correct and never contains a token
 npm run gate:check         # a rude agent is stopped; symlinks cannot leave the workspace
+npm run workflow:check     # the golden path runs, is killed mid-loop, and resumes
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent

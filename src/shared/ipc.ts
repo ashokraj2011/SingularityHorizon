@@ -102,6 +102,12 @@ export interface PendingPermission {
    * the protocol and one that merely got caught.
    */
   gated?: boolean
+  /**
+   * True when a governed workflow step answered this from its standing grant
+   * rather than a person answering it. Recorded because "approved" and
+   * "approved by nobody in particular" are different things in a receipt.
+   */
+  unattended?: boolean
 }
 
 export type SessionStatus = 'starting' | 'idle' | 'busy' | 'error' | 'exited'

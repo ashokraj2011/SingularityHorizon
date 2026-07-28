@@ -88,6 +88,14 @@ export class AgentSession extends EventEmitter {
    * for one action.
    */
   private pendingApprovals: ClassifiedCall[] = []
+
+  /**
+   * True when this session runs a governed workflow step rather than serving a
+   * person. Agent-initiated permission requests are then answered from the
+   * standing grant instead of parked on a card nobody is present to click —
+   * which otherwise deadlocks the run at the first well-behaved agent.
+   */
+  private unattended = false
   private flushTimer?: NodeJS.Timeout
   private dirty = false
   private disposed = false
@@ -534,9 +542,25 @@ export class AgentSession extends EventEmitter {
 
   /* --------------------------------------------------- capability gate */
 
-  /** The mode this session runs under. Set by the host; never by the agent. */
-  setMode(mode: SessionMode): void {
-    this.policy = { ...this.policy, mode, grants: [] }
+  /**
+   * Pin the capability mode. Set by the host; never by the agent.
+   *
+   * `autoGrant` is for governed workflow steps, where a human already approved
+   * the workflow definition and there is nobody sitting in front of the run to
+   * answer cards. The standing approval is the workflow; the mode is what
+   * bounds it, so the grants can never exceed what the mode permits. An
+   * interactive session never passes it.
+   */
+  setMode(
+    mode: SessionMode,
+    opts?: { autoGrant?: boolean; commandAllowList?: string[] }
+  ): void {
+    this.unattended = opts?.autoGrant === true
+    this.policy = {
+      mode,
+      grants: opts?.autoGrant ? allowAllGrants(mode) : [],
+      commandAllowList: opts?.commandAllowList
+    }
   }
 
   currentPolicy(): SessionPolicy {
@@ -642,6 +666,45 @@ export class AgentSession extends EventEmitter {
       toolCall: req.toolCall,
       options
     }
+
+    // Unattended: answer from policy. The approval already happened — a human
+    // approved the workflow that pinned this step's mode — so parking the call
+    // on a card would stall the run waiting for a person who is not there. The
+    // decision still runs through the same lattice, so a step cannot be talked
+    // into something its mode forbids, and the answered card stays in the
+    // transcript so the receipt records what was allowed and on what basis.
+    if (this.unattended) {
+      const call: ClassifiedCall = {
+        toolClass: req.toolCall?.kind === 'execute' ? 'terminal' : 'fs.write',
+        command:
+          typeof req.toolCall?.rawInput?.command === 'string'
+            ? req.toolCall.rawInput.command
+            : undefined,
+        title: req.toolCall?.title ?? ''
+      }
+      const decision = decide(this.policy, call)
+      const allow = options.find((o) => o.kind === 'allow_once') ?? options[0]
+      const deny = options.find((o) => o.kind === 'reject_once')
+      const chosen = decision.kind === 'allow' ? allow : deny
+
+      this.pushBlock({
+        kind: 'permission',
+        request: {
+          ...pending,
+          resolvedOptionId: chosen?.optionId,
+          cancelled: !chosen,
+          unattended: true
+        }
+      })
+      // Remember it, so the interceptor does not card the follow-up call.
+      if (decision.kind === 'allow') this.pendingApprovals.push(call)
+      return Promise.resolve(
+        chosen
+          ? { outcome: { outcome: 'selected' as const, optionId: chosen.optionId } }
+          : { outcome: { outcome: 'cancelled' as const } }
+      )
+    }
+
     this.pushBlock({ kind: 'permission', request: pending })
 
     return new Promise((resolve) => {
