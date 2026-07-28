@@ -52,4 +52,16 @@ else
   echo "✓ core is workflow-agnostic"
 fi
 
+# The headless harnesses bundle AgentSession and run it in plain Node against a
+# real agent. Anything it imports transitively must therefore avoid electron —
+# an import there fails at load, turning every such suite red at once.
+hits=$(grep -rn "from 'electron'" \
+  src/main/acp src/main/store src/main/ast src/shared \
+  --include='*.ts' || true)
+if [ -n "$hits" ]; then
+  echo "✗ a module used by the headless harnesses imports electron:"; echo "$hits"; fail=1
+else
+  echo "✓ session/store/ast layers are runnable outside electron"
+fi
+
 exit $fail

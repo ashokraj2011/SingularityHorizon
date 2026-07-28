@@ -1,4 +1,3 @@
-import { app } from 'electron'
 import { createReadStream } from 'node:fs'
 import { appendFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
@@ -24,11 +23,30 @@ import type { PersistedSession, ThreadBlock } from '../../shared/ipc'
  * of is worse.
  */
 
-const DIR = 'sessions'
 const INDEX = 'index.json'
 
+/**
+ * Where transcripts live. Injected rather than resolved from electron's
+ * userData path, because this module is imported by AgentSession, which must
+ * stay runnable outside an Electron runtime — the headless test harnesses drive
+ * a real agent in plain Node, and an electron import there fails at load.
+ *
+ * Unconfigured means "do not persist" rather than an error, so a harness that
+ * never calls configureStore simply runs without history.
+ */
+let rootDir: string | null = null
+
+export function configureStore(dir: string): void {
+  rootDir = dir
+}
+
+export function isConfigured(): boolean {
+  return rootDir !== null
+}
+
 function root(): string {
-  return join(app.getPath('userData'), DIR)
+  if (!rootDir) throw new Error('session store is not configured')
+  return rootDir
 }
 
 function transcriptPath(id: string): string {
@@ -48,6 +66,7 @@ async function ensureDir(): Promise<void> {
 }
 
 export async function listSessions(): Promise<PersistedSession[]> {
+  if (!rootDir) return []
   if (indexCache) return indexCache
   try {
     indexCache = JSON.parse(await readFile(indexPath(), 'utf8')) as PersistedSession[]
@@ -68,6 +87,7 @@ function queue<T>(fn: () => Promise<T>): Promise<T> {
 
 /** Creates or updates a session's index entry. */
 export async function upsertSession(entry: PersistedSession): Promise<void> {
+  if (!rootDir) return
   await queue(async () => {
     const all = await listSessions()
     const i = all.findIndex((s) => s.id === entry.id)
@@ -90,6 +110,7 @@ export async function upsertSession(entry: PersistedSession): Promise<void> {
  * design), so the caller passes only what is new — see `appendedSince`.
  */
 export async function appendBlocks(id: string, blocks: ThreadBlock[]): Promise<void> {
+  if (!rootDir) return
   if (!blocks.length) return
   try {
     await ensureDir()
@@ -109,6 +130,7 @@ export async function appendBlocks(id: string, blocks: ThreadBlock[]): Promise<v
  * cannot express.
  */
 export async function rewriteBlocks(id: string, blocks: ThreadBlock[]): Promise<void> {
+  if (!rootDir) return
   try {
     await ensureDir()
     await writeFile(
@@ -126,6 +148,7 @@ export async function rewriteBlocks(id: string, blocks: ThreadBlock[]): Promise<
  * have to be held twice — once as text and once as objects.
  */
 export async function readBlocks(id: string, limit?: number): Promise<ThreadBlock[]> {
+  if (!rootDir) return []
   const blocks: ThreadBlock[] = []
   try {
     const stream = createReadStream(transcriptPath(id), { encoding: 'utf8' })
@@ -146,6 +169,7 @@ export async function readBlocks(id: string, limit?: number): Promise<ThreadBloc
 }
 
 export async function deleteSession(id: string): Promise<void> {
+  if (!rootDir) return
   await queue(async () => {
     const all = (await listSessions()).filter((s) => s.id !== id)
     indexCache = all

@@ -11,13 +11,13 @@ import { mkdtempSync, readFileSync, writeFileSync, appendFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// The store resolves its directory from electron's userData path; the build
-// aliases `electron` to a stub that reads this variable, so it must be set
-// before the store module is imported.
 const userData = mkdtempSync(join(tmpdir(), 'eh-persist-'))
-process.env.EH_TEST_USERDATA = userData
 
-const store = await import('../src/main/store/sessionStore')
+import * as store from '../src/main/store/sessionStore'
+// The store takes its directory by injection rather than reaching for
+// electron's userData path, which is what lets it be imported — and tested —
+// outside an Electron runtime at all.
+store.configureStore(join(userData, 'sessions'))
 import type { ThreadBlock } from '../src/shared/ipc'
 
 const checks: Array<[string, boolean, string?]> = []

@@ -18,6 +18,7 @@ import { statPaths } from './attachments'
 import { loadProvidersFromEnv } from './providers/load'
 import { registeredProviders } from './providers/registry'
 import { preferredToolProfile, rememberToolProfile } from './prefs'
+import { configureStore } from './store/sessionStore'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
@@ -143,6 +144,8 @@ let handlersRegistered = false
 export function registerEventHorizonHandlers(): void {
   if (handlersRegistered) return
   handlersRegistered = true
+  // An embedding host may never call startStandalone, so configure here too.
+  configureStore(join(app.getPath('userData'), 'sessions'))
   registerHandlers()
 }
 
@@ -414,6 +417,7 @@ export async function eventHorizonStatus(): Promise<EventHorizonStatus> {
 /** Starts the standalone desktop app. The embedded host does not call this. */
 export async function startStandalone(): Promise<void> {
   await app.whenReady()
+  configureStore(join(app.getPath('userData'), 'sessions'))
   // Opt-in only: standalone loads nothing unless EVENT_HORIZON_PROVIDERS names
   // something, so a host embeds this verbatim rather than editing the source.
   const loaded = await loadProvidersFromEnv()

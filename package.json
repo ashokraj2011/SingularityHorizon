@@ -44,7 +44,7 @@
     "dist": "electron-vite build && electron-builder",
     "provider:check": "esbuild scripts/provider-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/provider-check.mjs --log-level=error && node out/provider-check.mjs",
     "contract:check": "esbuild scripts/contract-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/contract-check.mjs --log-level=error && node out/contract-check.mjs",
-    "persist:check": "esbuild scripts/persist-check.ts --bundle --platform=node --format=esm --target=node22 --alias:electron=./scripts/stubs/electron.ts --outfile=out/persist-check.mjs --log-level=error && node out/persist-check.mjs"
+    "persist:check": "esbuild scripts/persist-check.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/persist-check.mjs --log-level=error && node out/persist-check.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0"
