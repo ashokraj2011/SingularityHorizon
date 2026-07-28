@@ -4,6 +4,7 @@ import type { SessionSnapshot } from '@shared/ipc'
 import { formatTokens } from '@shared/contextInfo'
 import { useHostContext, useStore } from '../store'
 import { getSlots } from '../slots'
+import { AuditPanel } from './AuditPanel'
 import { ContextPanel } from './ContextPanel'
 
 export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Element {
@@ -14,6 +15,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
 
   const [menuOpen, setMenuOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -150,6 +152,16 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
             </button>
 
             <div className="drop-sep" />
+            <div className="drop-label">Record</div>
+            <button
+              className="menu-item"
+              title="Every permission request and tool invocation, with the answer given"
+              onClick={() => act(() => setAuditOpen(true))}
+            >
+              Audit record…
+            </button>
+
+            <div className="drop-sep" />
             <div className="drop-label">Session</div>
             <button
               className="menu-item"
@@ -163,6 +175,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
       </div>
 
       {panelOpen && <ContextPanel session={session} onClose={() => setPanelOpen(false)} />}
+      {auditOpen && <AuditPanel sessionId={session.id} onClose={() => setAuditOpen(false)} />}
     </header>
   )
 }

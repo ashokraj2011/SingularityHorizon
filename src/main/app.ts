@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { Dirent } from 'node:fs'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -18,6 +18,7 @@ import { statPaths } from './attachments'
 import { loadProvidersFromEnv } from './providers/load'
 import { registeredProviders } from './providers/registry'
 import { preferredToolProfile, rememberToolProfile } from './prefs'
+import { renderAuditMarkdown, suggestedFilename } from './auditReport'
 import { configureStore } from './store/sessionStore'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
@@ -199,6 +200,24 @@ handle('sessions:listPersisted', () => manager.listPersisted())
 handle('sessions:restore', (id: string) => manager.restore(id))
 handle('sessions:forget', (id: string) => manager.forget(id))
 handle('sessions:audit', (id: string) => manager.audit(id))
+handle('sessions:saveAudit', async (id: string, format: 'json' | 'markdown') => {
+  const record = await manager.audit(id)
+  const body =
+    format === 'markdown' ? renderAuditMarkdown(record) : JSON.stringify(record, null, 2)
+
+  if (!mainWindow) return null
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export audit record',
+    defaultPath: suggestedFilename(record, format),
+    filters:
+      format === 'markdown'
+        ? [{ name: 'Markdown', extensions: ['md'] }]
+        : [{ name: 'JSON', extensions: ['json'] }]
+  })
+  if (res.canceled || !res.filePath) return null
+  await writeFile(res.filePath, body, 'utf8')
+  return res.filePath
+})
 handle('sessions:prompt', (sessionId: string, request: PromptRequest) =>
   manager.prompt(sessionId, request)
 )

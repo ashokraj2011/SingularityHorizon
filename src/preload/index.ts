@@ -17,6 +17,7 @@ const api: AcpStudioApi = {
   restoreSession: (id) => ipcRenderer.invoke('sessions:restore', id),
   forgetSession: (id) => ipcRenderer.invoke('sessions:forget', id),
   exportAudit: (id) => ipcRenderer.invoke('sessions:audit', id),
+  saveAudit: (id, format) => ipcRenderer.invoke('sessions:saveAudit', id, format),
   restartSession: (sessionId) => ipcRenderer.invoke('sessions:restart', sessionId),
   prompt: (sessionId, request) => ipcRenderer.invoke('sessions:prompt', sessionId, request),
   runCommandSilent: (sessionId, command) =>

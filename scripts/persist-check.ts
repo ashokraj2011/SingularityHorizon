@@ -154,6 +154,44 @@ ok('deleted session leaves the index', !(await store.listSessions()).some((s) =>
 ok('deleted transcript is gone', (await store.readBlocks('s3')).length === 0)
 ok('other sessions survive deletion', (await store.readBlocks('s1')).length > 0)
 
+/* ------------------------------------------------------- audit report */
+
+const { renderAuditMarkdown, suggestedFilename } = await import('../src/main/auditReport')
+const report = renderAuditMarkdown(audit)
+
+ok('report names the session', report.includes('audited'))
+ok('report states the directory', report.includes('/tmp/audited'))
+// The decision column is the load-bearing part: a denial that reads as an
+// approval would make the whole record worse than not having one.
+ok('the denial appears as denied', /\| Deny \|/.test(report), report.split('\n').find((l) => l.includes('Deny')))
+ok('the exact command is quoted', report.includes('rm -rf tmp'))
+ok('summary counts the denial', /Denied or cancelled: \*\*1\*\*/.test(report))
+ok('summary counts requests', /Permission requests: \*\*1\*\*/.test(report))
+ok('tool invocations are listed with status', report.includes('failed'))
+ok('report explains what it is', report.includes('passing through that gate'))
+
+// A pipe or newline in a command would otherwise break the table it sits in.
+const nasty = renderAuditMarkdown({
+  session: audit.session,
+  approvals: [{ at: 1, title: 'weird', command: 'grep a | wc -l\nsecond line', decision: 'Allow once' }],
+  commands: [],
+  blocks: 1
+})
+const tableRows = nasty.split('\n').filter((l) => l.startsWith('| '))
+ok('a pipe in a command does not break the table',
+   tableRows.every((r) => (r.match(/(?<!\\)\|/g) ?? []).length === 5),
+   tableRows.find((r) => (r.match(/(?<!\\)\|/g) ?? []).length !== 5))
+ok('a newline in a command does not split the row', !nasty.includes('second line\n|'))
+
+ok('filename is filesystem-safe', /^audit-[A-Za-z0-9._-]+\.md$/.test(suggestedFilename(audit, 'markdown')),
+   suggestedFilename(audit, 'markdown'))
+ok('json format gets a json extension', suggestedFilename(audit, 'json').endsWith('.json'))
+
+// An empty session must still produce a usable document, not a broken one.
+const empty = renderAuditMarkdown({ session: null, approvals: [], commands: [], blocks: 0 })
+ok('an empty record still renders', empty.includes('No permission was requested'))
+ok('an empty record does not claim unknown counts', /Permission requests: \*\*0\*\*/.test(empty))
+
 console.log('--- results ---')
 let failed = 0
 for (const [name, pass, detail] of checks) {

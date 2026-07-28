@@ -1,3 +1,6 @@
+import { useState } from 'react'
+
+import { AuditPanel } from './AuditPanel'
 import { useStore } from '../store'
 
 export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
@@ -11,6 +14,7 @@ export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
     restoreSession,
     forgetSession
   } = useStore()
+  const [auditId, setAuditId] = useState<string | null>(null)
 
   return (
     <aside className="sidebar">
@@ -90,6 +94,16 @@ export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
                 </span>
                 <button
                   className="close"
+                  title="Audit record — what the agent was allowed to do"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setAuditId(s.id)
+                  }}
+                >
+                  ⎘
+                </button>
+                <button
+                  className="close"
                   title="Delete this session and its transcript"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -103,6 +117,8 @@ export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
           </>
         )}
       </div>
+
+      {auditId && <AuditPanel sessionId={auditId} onClose={() => setAuditId(null)} />}
     </aside>
   )
 }

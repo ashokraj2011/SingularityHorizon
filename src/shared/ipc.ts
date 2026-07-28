@@ -168,6 +168,32 @@ export interface PersistedSession {
   lastMessage?: string
 }
 
+/**
+ * The record of what an agent was allowed to do in a session.
+ *
+ * Derived from the transcript rather than logged separately, so it cannot drift
+ * from what the user actually saw and approved.
+ */
+export interface AuditApproval {
+  at: number
+  title: string
+  command?: string
+  decision: string
+}
+
+export interface AuditCommand {
+  at: number
+  command: string
+  status?: string
+}
+
+export interface AuditRecord {
+  session: PersistedSession | null
+  approvals: AuditApproval[]
+  commands: AuditCommand[]
+  blocks: number
+}
+
 /* ------------------------------------------------------------------ repo */
 
 /**
@@ -299,7 +325,9 @@ export interface AcpStudioApi {
   /** Reopens a stored session: transcript from disk, agent reconnected. */
   restoreSession(id: string): Promise<SessionSnapshot | null>
   forgetSession(id: string): Promise<void>
-  exportAudit(id: string): Promise<unknown>
+  exportAudit(id: string): Promise<AuditRecord>
+  /** Writes an audit record to a file the user chooses. Returns the path. */
+  saveAudit(id: string, format: 'json' | 'markdown'): Promise<string | null>
   listToolProfiles(): Promise<ToolProfileInfo[]>
   createSession(opts: {
     cwd: string

@@ -188,7 +188,11 @@ const fakeApi: AcpStudioApi = {
   forgetSession: async (id) => {
     calls.push(`forget:${id}`)
   },
-  exportAudit: async (id) => ({ session: null, approvals: [], commands: [], blocks: 0, id }),
+  exportAudit: async () => ({ session: null, approvals: [], commands: [], blocks: 0 }),
+  saveAudit: async (id, format) => {
+    calls.push(`saveAudit:${id}:${format}`)
+    return `/fake/audit.${format === 'markdown' ? 'md' : 'json'}`
+  },
   refreshAstIndex: async () => ({
     files: 2,
     symbols: 7,
