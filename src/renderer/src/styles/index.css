@@ -1548,3 +1548,41 @@ textarea {
   color: var(--red);
   border-color: rgba(209, 106, 99, 0.5);
 }
+
+/* A running command is doing something; a static "PENDING" reads as stuck. */
+.tool-spinner {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--yellow);
+  animation: pulse 1.1s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+/* A control disabled by policy should look deliberate, not broken. */
+.pill.toggle.locked,
+.pill.toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+
+.mult {
+  margin-left: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--yellow);
+  border: 1px solid rgba(212, 162, 78, 0.45);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.perm-policy {
+  font-size: 11.5px;
+  color: var(--dim);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 4px 9px;
+}

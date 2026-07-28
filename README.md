@@ -33,7 +33,38 @@ Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-c
 - **Tool profiles** — trade agent breadth for context. Measured: a 71% cut in per-request overhead (see below).
 - **AST outlines** — attach a file's structure instead of its text. Measured 75% smaller across a real sample, 83–90% on implementation-heavy files.
 - **Skills** — loaded from disk by the client, because Copilot's ACP server doesn't advertise them (see below).
+- **Cost aggregation** — spend rolled up across every session by model, repository, and day, weighted by each model's cost multiplier.
+- **Policy** — a JSON file can pin a tool profile, restrict models and agents, and disable blanket approval. Enforced in the main process, not the UI.
 - **Multiple sessions** — each is its own agent process, scoped to its own directory. One crashing doesn't affect the others.
+
+## Cost
+
+Copilot bills premium *requests*, not tokens, and each model carries a multiplier — Haiku at 0.33x against Opus at 15x is a **45× spread for the same number of requests**. So the figure that tracks the invoice is a weighted request count, and that is what **⋯ → Usage across sessions** leads with. Tokens are reported alongside, because they drive context pressure — a different problem with a different fix.
+
+Sessions that have not yet reported usage are counted separately and the total is marked a floor, never silently treated as zero. A model whose multiplier can't be parsed counts as 1x rather than free: treating it as free would hide exactly the sessions whose cost is least certain.
+
+The data comes from the agent's own `/usage` output, captured after each turn and stored with the session, so the report survives a restart.
+
+## Policy
+
+`.event-horizon/policy.json`, read from — in increasing precedence — `~/`, then every directory from the workspace up to the filesystem root (outermost first, so the nearest wins), then whatever path `EVENT_HORIZON_POLICY` points at. The lookup is deliberately independent of git, so a directory that is not a repository still carries its policy.
+
+```json
+{
+  "pinToolProfile": "lean",
+  "allowedAgents": ["copilot"],
+  "allowedModels": ["claude-sonnet-5", "claude-haiku-4.5"],
+  "disableAllowAll": true,
+  "disableAutopilot": true,
+  "note": "shown in the tooltip when a control is locked"
+}
+```
+
+Every field is optional; an absent or malformed file means unrestricted. It **fails open on purpose** — failing closed would let a typo lock someone out of their own tool.
+
+`allowedAgents` and `allowedModels` **intersect** as they merge, so a repository can narrow what the org permitted but never widen it. Scalars take the nearest value.
+
+Enforcement lives in the main process. The UI reads policy too, but only so a locked control can say *why* it is unavailable instead of presenting a dead button — a policy the renderer merely hides is not a policy, since the renderer is the part an end user can most easily talk around. Refusals surface as a sentence in the transcript: *Model "claude-opus-5" is not permitted by policy.*
 
 ## Standalone, or embedded in your own app
 
@@ -208,6 +239,11 @@ npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent
 npm run profile:check      # tool-profile flags reach spawn AND measurably reduce overhead
 npm run outline:check      # AST outlines keep structure and drop bodies
+npm run index:check        # the AST index invalidates on edit and reloads warm
+npm run persist:check      # transcripts survive a restart and resume the agent
+npm run policy:check       # cost totals never understate; policy cannot be widened
+npm run provider:check     # no concrete host is wired into the core
+npm run contract:check     # the embedding contract matches what is exported
 npm run embed:check        # the UI runs with no Electron, no agent, no filesystem
 npm run guard              # the UI has not re-coupled itself to Electron
 ```

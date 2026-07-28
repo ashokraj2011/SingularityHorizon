@@ -11,6 +11,11 @@ import { useStore } from '../store'
  */
 export function PermissionCard({ request }: { request: PendingPermission }): React.JSX.Element {
   const answer = useStore((s) => s.answerPermission)
+  // Policy blocks the config change in the main process regardless, but the
+  // button also *answers* the prompt — so leaving it visible would half-work:
+  // the action gets approved while the bypass is refused, and the user is left
+  // reading an error about something they did not intend to do.
+  const allowAllBlocked = useStore((s) => s.policy.disableAllowAll === true)
   const resolved = request.resolvedOptionId !== undefined || request.cancelled
   const command =
     typeof request.toolCall.rawInput?.command === 'string'
@@ -41,7 +46,7 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
       if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return
       if (e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault()
-        allowAll()
+        if (!allowAllBlocked) allowAll()
         return
       }
       const map: Record<string, string | undefined> = {
@@ -60,7 +65,7 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [resolved, request, answer])
+  }, [resolved, request, answer, allowAllBlocked])
 
   const chosen = request.options.find((o) => o.optionId === request.resolvedOptionId)
 
@@ -91,14 +96,20 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
             </button>
           ))}
           <span className="spacer" />
-          <button
-            className="btn allow-all"
-            title="Approve this and stop asking for the rest of the session"
-            onClick={allowAll}
-          >
-            Allow all
-            <kbd style={{ opacity: 0.7, fontSize: 11 }}>⇧A</kbd>
-          </button>
+          {allowAllBlocked ? (
+            <span className="perm-policy" title="Set by policy">
+              Blanket approval disabled by policy
+            </span>
+          ) : (
+            <button
+              className="btn allow-all"
+              title="Approve this and stop asking for the rest of the session"
+              onClick={allowAll}
+            >
+              Allow all
+              <kbd style={{ opacity: 0.7, fontSize: 11 }}>⇧A</kbd>
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -9,12 +9,21 @@ import { useActiveSession, useStore } from './store'
 
 export function App(): React.JSX.Element {
   const { bootstrap, applyEvent, agents, newSession, launching, launchError, cancel } = useStore()
+  const activeId = useStore((s) => s.activeId)
+  const loadPolicy = useStore((s) => s.loadPolicy)
   const session = useActiveSession()
   const [agentId, setAgentId] = useState('copilot')
   // Tool profile is a spawn flag, so it must be chosen before the session
   // exists — it cannot be changed on a live one.
   const [toolProfile, setToolProfile] = useState('full')
   const toolProfiles = useStore((s) => s.toolProfiles)
+
+  // Policy is per-workspace, and several paths change the active session
+  // (click, host activation, create, close). Watching the resulting state is
+  // the only way to catch all of them.
+  useEffect(() => {
+    void loadPolicy()
+  }, [activeId, loadPolicy])
 
   useEffect(() => {
     void bootstrap()

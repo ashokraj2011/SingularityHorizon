@@ -74,6 +74,8 @@ export class AgentSession extends EventEmitter {
   private trimmed = false
   private persistDirty = false
   private turns = 0
+  private lastModel?: string
+  private lastModelMultiplier?: string
   private canLoadSession = false
   /** Suppresses the agent's replay while resuming; we already have the record. */
   private replaying = false
@@ -365,7 +367,19 @@ export class AgentSession extends EventEmitter {
     try {
       const usageText = await this.runCommandSilent('/usage')
       const usage = parseUsage(usageText)
-      if (usage) this.patch({ usage })
+      if (usage) {
+        this.patch({ usage })
+        // Record which model produced it. Cost attribution is meaningless
+        // without knowing the multiplier those requests were billed at.
+        const modelOption = this.snapshot.configOptions.find((o) => o.id === 'model')
+        const current = modelOption?.currentValue
+        const choice = modelOption?.options?.find((c) => c.value === current)
+        const multiplier = choice?._meta?.copilotUsage
+        this.lastModel = current
+        this.lastModelMultiplier = typeof multiplier === 'string' ? multiplier : undefined
+        this.persistDirty = true
+        this.persist()
+      }
     } catch {
       /* ignore */
     }
@@ -735,6 +749,9 @@ export class AgentSession extends EventEmitter {
       createdAt: snapshot.createdAt,
       updatedAt: Date.now(),
       turns: this.turns,
+      usage: snapshot.usage,
+      model: this.lastModel,
+      modelMultiplier: this.lastModelMultiplier,
       lastMessage: [...snapshot.blocks]
         .reverse()
         .find((b) => b.kind === 'user')

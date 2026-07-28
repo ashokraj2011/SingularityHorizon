@@ -166,6 +166,45 @@ export interface PersistedSession {
   turns: number
   /** First line of the last user message, as a label. */
   lastMessage?: string
+  /** Last known token accounting, scraped from `/usage`. */
+  usage?: UsageInfo
+  /** Model in use when usage was last read. */
+  model?: string
+  /**
+   * The agent's own cost multiplier for that model, e.g. "15x". Copilot bills
+   * premium requests with a per-model multiplier rather than by token, so this
+   * — not token count — is what moves the invoice.
+   */
+  modelMultiplier?: string
+}
+
+/** Cost and volume rolled up across sessions. */
+export interface UsageBucket {
+  key: string
+  label: string
+  sessions: number
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cachedTokens: number
+  /** Requests weighted by the model multiplier, when one is known. */
+  weightedRequests: number
+  multiplier?: string
+}
+
+export interface UsageSummary {
+  totalSessions: number
+  sessionsWithUsage: number
+  totalRequests: number
+  totalWeightedRequests: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCachedTokens: number
+  byModel: UsageBucket[]
+  byRepo: UsageBucket[]
+  byDay: UsageBucket[]
+  /** True when some sessions have no usage reading, so totals understate. */
+  partial: boolean
 }
 
 /**
@@ -192,6 +231,25 @@ export interface AuditRecord {
   approvals: AuditApproval[]
   commands: AuditCommand[]
   blocks: number
+}
+
+/**
+ * Administrative restrictions. Enforced in the main process; the renderer reads
+ * this only to explain why a control is unavailable.
+ */
+export interface Policy {
+  /** Force every session onto this tool profile, ignoring the picker. */
+  pinToolProfile?: string
+  /** Only these agents may be launched. */
+  allowedAgents?: string[]
+  /** Only these model ids may be selected. */
+  allowedModels?: string[]
+  /** Refuse "allow all" — every action must be approved individually. */
+  disableAllowAll?: boolean
+  /** Refuse autopilot mode, which approves everything by design. */
+  disableAutopilot?: boolean
+  /** Shown in the UI so people know where a restriction came from. */
+  note?: string
 }
 
 /* ------------------------------------------------------------------ repo */
@@ -325,6 +383,9 @@ export interface AcpStudioApi {
   /** Reopens a stored session: transcript from disk, agent reconnected. */
   restoreSession(id: string): Promise<SessionSnapshot | null>
   forgetSession(id: string): Promise<void>
+  usageSummary(): Promise<UsageSummary>
+  /** Policy in force for a working directory (omit for the global default). */
+  getPolicy(workingDir?: string): Promise<Policy>
   exportAudit(id: string): Promise<AuditRecord>
   /** Writes an audit record to a file the user chooses. Returns the path. */
   saveAudit(id: string, format: 'json' | 'markdown'): Promise<string | null>

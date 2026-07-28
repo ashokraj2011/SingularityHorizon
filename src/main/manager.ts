@@ -1,6 +1,13 @@
 import { EventEmitter } from 'node:events'
 
-import type { MainEvent, PersistedSession, PromptRequest, SessionSnapshot } from '../shared/ipc'
+import type {
+  MainEvent,
+  PersistedSession,
+  PromptRequest,
+  SessionSnapshot,
+  UsageSummary
+} from '../shared/ipc'
+import { summarizeUsage } from './usageSummary'
 import { AgentSession } from './acp/session'
 import { resolveAgent } from './agents'
 import {
@@ -117,6 +124,19 @@ export class SessionManager extends EventEmitter {
 
   forget(id: string): Promise<void> {
     return deleteSession(id)
+  }
+
+  async usageSummary(): Promise<UsageSummary> {
+    // Live sessions are included from their own snapshots so today's spend is
+    // visible before a session is closed.
+    const stored = await listPersistedSessions()
+    const live = [...this.sessions.values()].map((s) => s.getSnapshot())
+    const liveIds = new Set(live.map((s) => s.id))
+    const merged: PersistedSession[] = [
+      ...stored.filter((s) => !liveIds.has(s.id)),
+      ...stored.filter((s) => liveIds.has(s.id))
+    ]
+    return summarizeUsage(merged)
   }
 
   audit(id: string): ReturnType<typeof exportAudit> {

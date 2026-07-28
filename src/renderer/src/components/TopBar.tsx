@@ -5,6 +5,7 @@ import { formatTokens } from '@shared/contextInfo'
 import { useHostContext, useStore } from '../store'
 import { getSlots } from '../slots'
 import { AuditPanel } from './AuditPanel'
+import { UsagePanel } from './UsagePanel'
 import { ContextPanel } from './ContextPanel'
 
 export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Element {
@@ -16,6 +17,8 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
   const [menuOpen, setMenuOpen] = useState(false)
   const [panelOpen, setPanelOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
+  const [usageOpen, setUsageOpen] = useState(false)
+  const policy = useStore((s) => s.policy)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -86,14 +89,21 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
 
       {allowAllOption && (
         <button
-          className={`pill toggle ${allowAllOn ? 'on' : ''}`}
+          className={`pill toggle ${allowAllOn ? 'on' : ''} ${policy.disableAllowAll && !allowAllOn ? 'locked' : ''}`}
+          disabled={policy.disableAllowAll && !allowAllOn}
           title={
-            allowAllOption.description ??
-            'Approve all tool, path, and URL requests without asking'
+            policy.disableAllowAll && !allowAllOn
+              ? `Disabled by policy${policy.note ? ` — ${policy.note}` : ''}. Each action must be approved individually.`
+              : (allowAllOption.description ??
+                'Approve all tool, path, and URL requests without asking')
           }
           onClick={() => void setConfigOption('allow_all', allowAllOn ? 'off' : 'on')}
         >
-          {allowAllOn ? 'Allow all: on' : 'Allow all'}
+          {policy.disableAllowAll && !allowAllOn
+            ? 'Allow all: off (policy)'
+            : allowAllOn
+              ? 'Allow all: on'
+              : 'Allow all'}
         </button>
       )}
 
@@ -160,6 +170,13 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
             >
               Audit record…
             </button>
+            <button
+              className="menu-item"
+              title="Weighted request cost and tokens across every session"
+              onClick={() => act(() => setUsageOpen(true))}
+            >
+              Usage across sessions…
+            </button>
 
             <div className="drop-sep" />
             <div className="drop-label">Session</div>
@@ -176,6 +193,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
 
       {panelOpen && <ContextPanel session={session} onClose={() => setPanelOpen(false)} />}
       {auditOpen && <AuditPanel sessionId={session.id} onClose={() => setAuditOpen(false)} />}
+      {usageOpen && <UsagePanel onClose={() => setUsageOpen(false)} />}
     </header>
   )
 }

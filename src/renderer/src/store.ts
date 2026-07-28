@@ -8,6 +8,7 @@ import type {
   MainEvent,
   SessionSnapshot,
   PersistedSession,
+  Policy,
   SkillInfo,
   ToolProfileInfo
 } from '@shared/ipc'
@@ -39,6 +40,9 @@ interface StoreState {
    * scrolled out of view.
    */
   expandedTools: Record<string, boolean>
+  /** Administrative restrictions; the UI reads these only to explain itself. */
+  policy: Policy
+  loadPolicy: () => Promise<void>
   toggleTool: (toolCallId: string, open: boolean) => void
   launching: boolean
   launchError: string | null
@@ -79,6 +83,7 @@ export const useStore = create<StoreState>((set, get) => ({
   attachments: {},
   hostContexts: {},
   expandedTools: {},
+  policy: {},
   launching: false,
   launchError: null,
 
@@ -369,6 +374,19 @@ export const useStore = create<StoreState>((set, get) => ({
     if (activeId) void getApi().cancel(activeId)
   },
 
+  loadPolicy: async () => {
+    // Scoped to the active session's directory: policy is per-workspace, so
+    // asking without one would show the user a weaker policy than the one the
+    // main process will actually enforce on them.
+    const { activeId, sessions } = get()
+    const cwd = activeId ? sessions[activeId]?.cwd : undefined
+    try {
+      set({ policy: await getApi().getPolicy(cwd) })
+    } catch {
+      set({ policy: {} })
+    }
+  },
+
   setConfigOption: async (optionId, value, sessionId) => {
     const target = sessionId ?? get().activeId
     if (!target) return
@@ -377,7 +395,11 @@ export const useStore = create<StoreState>((set, get) => ({
     } catch (error) {
       const current = get().sessions[target]
       if (!current) return
-      const detail = error instanceof Error ? error.message : String(error)
+      // Strip Electron's IPC wrapper so a policy refusal reads as the sentence
+      // it was written as, not as plumbing.
+      const detail = (error instanceof Error ? error.message : String(error))
+        .replace(/^Error invoking remote method '[^']*':\s*/, '')
+        .replace(/^Error:\s*/, '')
       set({
         sessions: {
           ...get().sessions,

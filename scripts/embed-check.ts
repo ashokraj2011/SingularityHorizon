@@ -188,6 +188,20 @@ const fakeApi: AcpStudioApi = {
   forgetSession: async (id) => {
     calls.push(`forget:${id}`)
   },
+  getPolicy: async () => ({}),
+  usageSummary: async () => ({
+    totalSessions: 0,
+    sessionsWithUsage: 0,
+    totalRequests: 0,
+    totalWeightedRequests: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCachedTokens: 0,
+    byModel: [],
+    byRepo: [],
+    byDay: [],
+    partial: false
+  }),
   exportAudit: async () => ({ session: null, approvals: [], commands: [], blocks: 0 }),
   saveAudit: async (id, format) => {
     calls.push(`saveAudit:${id}:${format}`)

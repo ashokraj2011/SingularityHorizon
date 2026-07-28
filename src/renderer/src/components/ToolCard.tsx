@@ -23,7 +23,12 @@ export function ToolCard({ call }: { call: ToolCall }): React.JSX.Element {
   // Failures start open — that's the case you always want to read. An explicit
   // choice overrides it, and lives in the store so scrolling a card out of
   // view (which unmounts it) does not quietly discard the choice.
-  const open = explicit ?? status === 'failed'
+  // Running and failed commands open themselves. Copilot streams partial output
+  // through tool_call_update while a command is still going, so a collapsed
+  // card during a long build hides exactly the output you are waiting for —
+  // which is the real gap a "terminal view" would have been for.
+  const running = status === 'pending' || status === 'in_progress'
+  const open = explicit ?? (status === 'failed' || running)
   const setOpen = (next: boolean): void => toggleTool(call.toolCallId, next)
 
   const command = typeof call.rawInput?.command === 'string' ? call.rawInput.command : null
@@ -35,7 +40,10 @@ export function ToolCard({ call }: { call: ToolCall }): React.JSX.Element {
       <button className="tool-head" onClick={() => hasBody && setOpen(!open)}>
         <span className="tool-icon">{KIND_ICON[call.kind ?? 'other'] ?? '•'}</span>
         <span className="tool-title">{call.title || call.kind || 'Tool call'}</span>
-        <span className={`tool-status ${status}`}>{status.replace('_', ' ')}</span>
+        <span className={`tool-status ${status}`}>
+          {running && <span className="tool-spinner" />}
+          {status.replace('_', ' ')}
+        </span>
         {hasBody && (
           <span className="tool-icon" style={{ width: 10 }}>
             {open ? '▾' : '▸'}

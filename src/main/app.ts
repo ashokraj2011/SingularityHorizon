@@ -19,6 +19,12 @@ import { loadProvidersFromEnv } from './providers/load'
 import { registeredProviders } from './providers/registry'
 import { preferredToolProfile, rememberToolProfile } from './prefs'
 import { renderAuditMarkdown, suggestedFilename } from './auditReport'
+import {
+  agentAllowed,
+  configChangeRefusal,
+  enforceToolProfile,
+  loadPolicy
+} from './policy'
 import { configureStore } from './store/sessionStore'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
@@ -174,7 +180,11 @@ export function registerEventHorizonHandlers(): void {
 
 function registerHandlers(): void {
 
-handle('agents:list', () => availableAgents())
+handle('agents:list', async () => {
+  const policy = await loadPolicy()
+  return (await availableAgents()).filter((a) => agentAllowed(policy, a.id))
+})
+handle('policy:get', (workingDir?: string) => loadPolicy(workingDir))
 handle('sessions:list', () => manager.list())
 handle('agents:toolProfiles', () =>
   TOOL_PROFILES.map(({ id, name, description, measuredOverhead }) => ({
@@ -188,7 +198,15 @@ handle('sessions:create', async (opts: { cwd: string; agentId: string; toolProfi
   // Remember the choice against the repo so the next session on it starts the
   // same way — the saving is worthless if it has to be re-selected every time.
   const repo = await discoverRepo(opts.cwd).catch(() => null)
-  const profile = opts.toolProfile ?? (await preferredToolProfile(repo?.root))
+  const policy = await loadPolicy(opts.cwd)
+  if (!agentAllowed(policy, opts.agentId)) {
+    throw new Error(`Agent "${opts.agentId}" is not permitted by policy.`)
+  }
+  // Policy overrides both the request and the remembered preference.
+  const profile = enforceToolProfile(
+    policy,
+    opts.toolProfile ?? (await preferredToolProfile(repo?.root))
+  )
   if (profile) void rememberToolProfile(profile, repo?.root)
   return manager.create(opts.cwd, opts.agentId, profile, {
     hostContext: getHostContext(opts.cwd)
@@ -200,6 +218,7 @@ handle('sessions:listPersisted', () => manager.listPersisted())
 handle('sessions:restore', (id: string) => manager.restore(id))
 handle('sessions:forget', (id: string) => manager.forget(id))
 handle('sessions:audit', (id: string) => manager.audit(id))
+handle('sessions:usageSummary', () => manager.usageSummary())
 handle('sessions:saveAudit', async (id: string, format: 'json' | 'markdown') => {
   const record = await manager.audit(id)
   const body =
@@ -267,8 +286,16 @@ handle('skills:expand', (cwd: string, name: string, args: string) =>
   expandSkill(cwd, name, args)
 )
 handle('sessions:cancel', (sessionId: string) => manager.cancel(sessionId))
-handle('sessions:setConfigOption', (sessionId: string, optionId: string, value: string) =>
-  manager.setConfigOption(sessionId, optionId, value)
+handle(
+  'sessions:setConfigOption',
+  async (sessionId: string, optionId: string, value: string) => {
+    // Refused here rather than only in the UI: the renderer is the layer a user
+    // can most easily route around, so it cannot be the thing enforcing policy.
+    const session = manager.list().find((s) => s.id === sessionId)
+    const refusal = configChangeRefusal(await loadPolicy(session?.cwd), optionId, value)
+    if (refusal) throw new Error(refusal)
+    return manager.setConfigOption(sessionId, optionId, value)
+  }
 )
 handle('permissions:respond', (requestId: string, optionId: string | null) =>
   manager.respondPermission(requestId, optionId)
