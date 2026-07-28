@@ -147,25 +147,61 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     id: 'copilot',
     name: 'GitHub Copilot CLI',
     command: 'copilot',
-    args: ['--acp', '--stdio']
+    args: ['--acp', '--stdio'],
+    // Observed at 1.0.75: routes terminal and fs calls through
+    // session/request_permission. Recorded, not trusted — the client gate runs
+    // regardless, and this value is one upstream release away from being wrong.
+    permissionModel: 'protocol'
   },
   {
-    id: 'claude-code',
+    id: 'claude',
     name: 'Claude Code',
-    command: 'claude-code-acp',
-    args: []
+    command: 'claude-agent-acp',
+    // The adapter has shipped under two names; probe both rather than showing
+    // the agent as unavailable because we guessed the older one.
+    altCommands: ['claude-code-acp'],
+    args: [],
+    permissionModel: 'unknown'
   },
   {
-    id: 'gemini',
-    name: 'Gemini CLI',
-    command: 'gemini',
-    args: ['--experimental-acp']
+    id: 'codex',
+    name: 'Codex',
+    command: 'codex-acp',
+    args: [],
+    permissionModel: 'unknown'
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    command: 'opencode',
+    args: ['acp'],
+    // The direct-LLM path: point its provider config at the model gateway and
+    // anything the gateway fronts — including internal models — becomes a
+    // coding agent here without a line of harness code.
+    permissionModel: 'unknown'
+  },
+  {
+    id: 'goose',
+    name: 'Goose',
+    command: 'goose',
+    args: ['acp'],
+    permissionModel: 'unknown'
   }
+  // Gemini CLI removed: the ACP entry point is being retired upstream.
 ]
+
+/** First of the agent's candidate binaries that exists on PATH. */
+async function whichAny(agent: AgentDefinition): Promise<string | null> {
+  for (const candidate of [agent.command, ...(agent.altCommands ?? [])]) {
+    const found = await which(candidate)
+    if (found) return found
+  }
+  return null
+}
 
 export async function availableAgents(): Promise<AgentDefinition[]> {
   const checked = await Promise.all(
-    BUILTIN_AGENTS.map(async (a) => ({ agent: a, bin: await which(a.command) }))
+    BUILTIN_AGENTS.map(async (a) => ({ agent: a, bin: await whichAny(a) }))
   )
   // Keep Copilot listed even if the probe fails so the UI can surface a real
   // error on launch rather than showing an empty agent list.
@@ -176,11 +212,12 @@ export async function availableAgents(): Promise<AgentDefinition[]> {
 
 export async function resolveAgent(
   agentId: string,
-  toolProfileId: string = DEFAULT_TOOL_PROFILE
+  toolProfileId: string = DEFAULT_TOOL_PROFILE,
+  virtualKey?: string
 ): Promise<AgentDefinition> {
   const preset = BUILTIN_AGENTS.find((a) => a.id === agentId)
   if (!preset) throw new Error(`Unknown agent: ${agentId}`)
-  const bin = await which(preset.command)
+  const bin = await whichAny(preset)
   if (!bin) {
     throw new Error(
       `Could not find "${preset.command}" on your PATH. Install it, or make sure it is on the PATH of your login shell.`
@@ -198,6 +235,33 @@ export async function resolveAgent(
     command: bin,
     args: [...preset.args, ...extraArgs],
     toolProfile: profile?.id ?? DEFAULT_TOOL_PROFILE,
-    env: { ...preset.env, PATH: await resolvedPath() }
+    env: { ...preset.env, PATH: await resolvedPath(), ...gatewayEnv(virtualKey) }
+  }
+}
+
+/**
+ * Point an agent at the model gateway.
+ *
+ * Agents that talk to a provider directly all read a base URL and an API key
+ * from the environment, and every major one accepts the OpenAI-compatible pair
+ * — which is what a LiteLLM proxy or an internal gateway speaks. Setting both
+ * families means one gateway serves an OpenAI-flavoured agent and an
+ * Anthropic-flavoured one without per-agent configuration.
+ *
+ * The key is passed in per session rather than read from the environment here,
+ * so a workflow runtime can issue one virtual key per (thread, step) and have
+ * spend attribute itself. With no gateway configured this returns nothing and
+ * agents use their own credentials exactly as before.
+ *
+ * Standing up the proxy is an operational task, not this file's job.
+ */
+export function gatewayEnv(virtualKey?: string): Record<string, string> {
+  const base = process.env.EVENT_HORIZON_GATEWAY_URL
+  if (!base) return {}
+  const key = virtualKey ?? process.env.EVENT_HORIZON_GATEWAY_KEY
+  return {
+    OPENAI_BASE_URL: base,
+    ANTHROPIC_BASE_URL: base,
+    ...(key ? { OPENAI_API_KEY: key, ANTHROPIC_API_KEY: key } : {})
   }
 }

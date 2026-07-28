@@ -96,6 +96,12 @@ export interface PendingPermission {
   /** Set once answered so the card renders its resolution instead of buttons. */
   resolvedOptionId?: string
   cancelled?: boolean
+  /**
+   * True when the client raised this card because the agent went ahead without
+   * asking. Worth showing: it is the difference between an agent that follows
+   * the protocol and one that merely got caught.
+   */
+  gated?: boolean
 }
 
 export type SessionStatus = 'starting' | 'idle' | 'busy' | 'error' | 'exited'
@@ -327,6 +333,33 @@ export interface SymbolHit {
 
 /* ------------------------------------------------------------- agent def */
 
+/** What a client-enforced gate can be asked to permit. */
+export type ToolClass = 'terminal' | 'fs.write' | 'fs.read'
+
+/**
+ * The capability lattice a session runs under. Cumulative and ordered:
+ * discuss < explore < plan < edit < verify < deliver.
+ *
+ * Distinct from the agent's own mode (Agent / Plan / Autopilot), which the
+ * agent advertises and enforces itself. This one is enforced by the client and
+ * an agent cannot change it.
+ */
+export type SessionMode = 'discuss' | 'explore' | 'plan' | 'edit' | 'verify' | 'deliver'
+
+/**
+ * Whether an agent is known to route consequential calls through
+ * `session/request_permission` before making them.
+ *
+ * 'protocol'    — observed asking before terminal/fs calls, at a pinned version
+ * 'cooperative' — asks sometimes; unprompted calls must be treated as ungated
+ * 'unknown'     — the default, including for anything the user adds
+ *
+ * This is a record of observed behaviour, not a promise. The gate does not
+ * trust any of these values — it intercepts regardless. The field exists so the
+ * UI can be honest about which agents were checked.
+ */
+export type PermissionModel = 'protocol' | 'cooperative' | 'unknown'
+
 export interface AgentDefinition {
   id: string
   name: string
@@ -335,6 +368,10 @@ export interface AgentDefinition {
   env?: Record<string, string>
   /** Which tool profile produced `args`; set by resolveAgent. */
   toolProfile?: string
+  /** Observed permission behaviour. Never trusted — see PermissionModel. */
+  permissionModel?: PermissionModel
+  /** Other binary names to probe for the same agent. */
+  altCommands?: string[]
 }
 
 /**

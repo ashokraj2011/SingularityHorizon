@@ -1586,3 +1586,17 @@ textarea {
   border-radius: 6px;
   padding: 4px 9px;
 }
+
+/* Which agents follow the protocol and which merely got caught is worth
+   seeing, not least because it is the difference the client gate exists for. */
+.perm-gated {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--yellow);
+  border: 1px solid rgba(212, 162, 78, 0.45);
+  border-radius: 999px;
+  padding: 1px 7px;
+  vertical-align: middle;
+}

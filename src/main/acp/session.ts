@@ -21,6 +21,7 @@ import type {
   MainEvent,
   PendingPermission,
   PromptRequest,
+  SessionMode,
   SessionSnapshot,
   ThreadBlock
 } from '../../shared/ipc'
@@ -32,6 +33,15 @@ import { renderContextDocuments } from '../contextDocuments'
 import { RpcPeer } from './jsonrpc'
 import { TerminalManager } from './terminals'
 import { readTextFile, writeTextFile } from './workspaceFs'
+import {
+  allowAllGrants,
+  classify,
+  decide,
+  defaultPolicy,
+  grantFor,
+  type ClassifiedCall,
+  type SessionPolicy
+} from './policy'
 
 /** Coalesce streaming token bursts into one renderer update per frame-ish. */
 const FLUSH_INTERVAL_MS = 40
@@ -64,6 +74,20 @@ export class AgentSession extends EventEmitter {
   private peer?: RpcPeer
   private terminals = new TerminalManager()
   private permissionWaiters = new Map<string, PermissionWaiter>()
+
+  /**
+   * Client-enforced capability policy. Never sent to the agent and never
+   * settable by it — an agent that could raise its own mode would be back to
+   * enforcing its own manners.
+   */
+  private policy: SessionPolicy = defaultPolicy()
+
+  /**
+   * Calls the agent asked permission for itself, keyed by what was approved.
+   * Consumed by the interceptor so a properly-behaved agent is not carded twice
+   * for one action.
+   */
+  private pendingApprovals: ClassifiedCall[] = []
   private flushTimer?: NodeJS.Timeout
   private dirty = false
   private disposed = false
@@ -404,6 +428,17 @@ export class AgentSession extends EventEmitter {
       configId: optionId,
       value
     })
+    // Allow-All tells the agent to stop asking. Without mirroring it into the
+    // gate, the client would simply start asking in the agent's place — which
+    // is the opposite of what the user just requested. Still capped by the mode
+    // lattice, and still per-session.
+    if (optionId === 'allow_all') {
+      this.policy = {
+        ...this.policy,
+        grants: value === 'on' ? allowAllGrants(this.policy.mode) : []
+      }
+    }
+
     // Optimistic: the agent also broadcasts config_option_update, but updating
     // locally keeps the picker from snapping back while that round-trips.
     this.patch({
@@ -438,6 +473,10 @@ export class AgentSession extends EventEmitter {
   /* ------------------------------------------------- agent -> client calls */
 
   private async handleAgentRequest(method: string, params: any): Promise<unknown> {
+    // Gate before dispatch. Every path below this line is already permitted.
+    const call = classify(method, params)
+    if (call) await this.enforce(call)
+
     switch (method) {
       case 'fs/read_text_file':
         return readTextFile([this.cwd], params)
@@ -493,6 +532,104 @@ export class AgentSession extends EventEmitter {
     }
   }
 
+  /* --------------------------------------------------- capability gate */
+
+  /** The mode this session runs under. Set by the host; never by the agent. */
+  setMode(mode: SessionMode): void {
+    this.policy = { ...this.policy, mode, grants: [] }
+  }
+
+  currentPolicy(): SessionPolicy {
+    return this.policy
+  }
+
+  /**
+   * Allow, refuse, or ask — before anything is dispatched.
+   *
+   * Throwing here becomes a JSON-RPC error on the agent's call, which is the
+   * same shape it would get from a failed filesystem operation. An agent that
+   * never asked permission cannot tell the difference between this and a slow
+   * or read-only disk, which is the point: correct behaviour does not depend on
+   * the agent cooperating.
+   */
+  private async enforce(call: ClassifiedCall): Promise<void> {
+    // An approval the agent itself collected covers the call that follows it.
+    // Match on the command when we can. When we cannot — the agent described
+    // the action in its own words and there is no reliable identifier tying the
+    // request to the call — fall back to the oldest outstanding approval of the
+    // same class. ACP gives no correlation id here, and the alternative is
+    // carding every well-behaved agent twice for one action.
+    const exact = this.pendingApprovals.findIndex(
+      (a) => a.toolClass === call.toolClass && a.command === call.command
+    )
+    const approved =
+      exact !== -1 ? exact : this.pendingApprovals.findIndex((a) => a.toolClass === call.toolClass)
+    if (approved !== -1) {
+      this.pendingApprovals.splice(approved, 1)
+      return
+    }
+
+    const decision = decide(this.policy, call)
+    if (decision.kind === 'allow') return
+
+    if (decision.kind === 'deny') {
+      this.pushBlock({ kind: 'notice', level: 'error', text: decision.reason })
+      const err = new Error(decision.reason) as Error & { code?: number }
+      err.code = -32603
+      throw err
+    }
+
+    // 'ask' — synthesize the card the agent should have asked for.
+    const optionId = await this.askUngated(call)
+    if (optionId === 'allow_always') {
+      this.policy = {
+        ...this.policy,
+        grants: [...this.policy.grants, grantFor(call, 'always')]
+      }
+      return
+    }
+    if (optionId === 'allow_once') return
+
+    const err = new Error(`Denied by the user: ${call.title}`) as Error & { code?: number }
+    err.code = -32603
+    throw err
+  }
+
+  /**
+   * A permission card for a call the agent never asked about.
+   *
+   * Deliberately the same card, the same waiter map, and the same renderer path
+   * as an agent-initiated request. A user should not have to know which agents
+   * are polite, and the audit export should not have two shapes of approval in
+   * it.
+   */
+  private askUngated(call: ClassifiedCall): Promise<string | null> {
+    const requestId = randomUUID()
+    const pending: PendingPermission = {
+      requestId,
+      sessionId: this.id,
+      toolCall: {
+        toolCallId: `gate-${requestId}`,
+        title: call.title,
+        kind: call.toolClass === 'terminal' ? 'execute' : 'edit',
+        status: 'pending',
+        rawInput: call.command ? { command: call.command } : undefined
+      } as ToolCall,
+      options: [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' },
+        { optionId: 'reject_once', name: 'Deny', kind: 'reject_once' }
+      ],
+      // Marks the card as one the client raised because the agent did not.
+      gated: true
+    }
+    this.pushBlock({ kind: 'permission', request: pending })
+
+    return new Promise((resolve) => {
+      this.permissionWaiters.set(requestId, { resolve: (optionId) => resolve(optionId) })
+    })
+  }
+
   private requestPermission(
     req: RequestPermissionRequest
   ): Promise<{ outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } }> {
@@ -509,12 +646,44 @@ export class AgentSession extends EventEmitter {
 
     return new Promise((resolve) => {
       this.permissionWaiters.set(requestId, {
-        resolve: (optionId) =>
+        resolve: (optionId) => {
+          // Approval and action are two separate calls: the agent asks, then
+          // calls terminal/create. Remember what was approved so the gate does
+          // not immediately card the thing the user just allowed.
+          const option = options.find((o) => o.optionId === optionId)
+          if (option && option.kind !== 'reject_once' && option.kind !== 'reject_always') {
+            const command =
+              typeof req.toolCall?.rawInput?.command === 'string'
+                ? req.toolCall.rawInput.command
+                : undefined
+            this.pendingApprovals.push({
+              toolClass: req.toolCall?.kind === 'execute' ? 'terminal' : 'fs.write',
+              command,
+              title: req.toolCall?.title ?? ''
+            })
+            if (option.kind === 'allow_always') {
+              this.policy = {
+                ...this.policy,
+                grants: [
+                  ...this.policy.grants,
+                  grantFor(
+                    {
+                      toolClass: req.toolCall?.kind === 'execute' ? 'terminal' : 'fs.write',
+                      command,
+                      title: ''
+                    },
+                    'always'
+                  )
+                ]
+              }
+            }
+          }
           resolve(
             optionId
               ? { outcome: { outcome: 'selected', optionId } }
               : { outcome: { outcome: 'cancelled' } }
           )
+        }
       })
     })
   }

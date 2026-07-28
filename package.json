@@ -41,13 +41,14 @@
     "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
     "guard": "sh scripts/guard-coupling.sh",
     "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --external:typescript --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
-    "check": "npm run guard && npm run install:check && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run policy:check && npm run provider:check && npm run profile:check && npm run attach:check",
+    "check": "npm run guard && npm run install:check && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run policy:check && npm run gate:check && npm run provider:check && npm run profile:check && npm run attach:check",
     "dist": "electron-vite build && electron-builder",
     "provider:check": "esbuild scripts/provider-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/provider-check.mjs --log-level=error && node out/provider-check.mjs",
     "contract:check": "esbuild scripts/contract-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/contract-check.mjs --log-level=error && node out/contract-check.mjs",
     "persist:check": "esbuild scripts/persist-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/persist-check.mjs --log-level=error && node out/persist-check.mjs",
     "policy:check": "esbuild scripts/policy-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/policy-check.mjs --log-level=error && node out/policy-check.mjs",
-    "install:check": "bash scripts/install-check.sh"
+    "install:check": "bash scripts/install-check.sh",
+    "gate:check": "esbuild scripts/gate-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/gate-check.mjs --log-level=error && node out/gate-check.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0"
