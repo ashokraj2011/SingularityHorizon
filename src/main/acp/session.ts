@@ -26,6 +26,7 @@ import type {
 } from '../../shared/ipc'
 import { parseContext, parseUsage } from '../../shared/contextInfo'
 import { indexFor } from '../ast/astIndex'
+import { rewriteBlocks, upsertSession } from '../store/sessionStore'
 import { buildAttachments } from '../attachments'
 import { renderContextDocuments } from '../contextDocuments'
 import { RpcPeer } from './jsonrpc'
@@ -34,6 +35,17 @@ import { readTextFile, writeTextFile } from './workspaceFs'
 
 /** Coalesce streaming token bursts into one renderer update per frame-ish. */
 const FLUSH_INTERVAL_MS = 40
+
+/**
+ * Hard ceiling on blocks held in memory.
+ *
+ * The full transcript is on disk, so this is a safety valve rather than a
+ * normal-path behaviour: a session would have to run for many hours to reach
+ * it. Without a ceiling the array and its DOM nodes grow without bound, which
+ * is precisely the failure persistence makes more likely by encouraging long
+ * sessions.
+ */
+const MAX_BLOCKS_IN_MEMORY = 2000
 
 interface PermissionWaiter {
   resolve: (optionId: string | null) => void
@@ -44,7 +56,7 @@ export declare interface AgentSession {
 }
 
 export class AgentSession extends EventEmitter {
-  readonly id = randomUUID()
+  readonly id: string
   readonly cwd: string
   readonly agent: AgentDefinition
 
@@ -58,6 +70,13 @@ export class AgentSession extends EventEmitter {
   private stderrTail = ''
   /** Serializes prompt turns against silent command runs. */
   private queue: Promise<unknown> = Promise.resolve()
+  /** True once older blocks have been dropped from memory. */
+  private trimmed = false
+  private persistDirty = false
+  private turns = 0
+  private canLoadSession = false
+  /** Suppresses the agent's replay while resuming; we already have the record. */
+  private replaying = false
   /** When set, streamed output is captured here instead of the transcript. */
   private capture: { text: string } | null = null
   private contextPending = true
@@ -65,8 +84,16 @@ export class AgentSession extends EventEmitter {
 
   private snapshot: SessionSnapshot
 
-  constructor(agent: AgentDefinition, cwd: string, contextDocuments: ContextDocument[] = []) {
+  constructor(
+    agent: AgentDefinition,
+    cwd: string,
+    contextDocuments: ContextDocument[] = [],
+    options: { id?: string } = {}
+  ) {
     super()
+    // A restored session keeps its stored id so its transcript, index entry and
+    // audit record stay one continuous thing rather than forking on reopen.
+    this.id = options.id ?? randomUUID()
     this.agent = agent
     this.cwd = cwd
     this.contextDocuments = contextDocuments.filter((document) => document.text.trim())
@@ -95,9 +122,23 @@ export class AgentSession extends EventEmitter {
     return this.snapshot
   }
 
+  /**
+   * Seeds a restored transcript before the agent connects, so reopening a
+   * session shows its history immediately rather than after a handshake.
+   */
+  restoreBlocks(blocks: ThreadBlock[], turns: number): void {
+    this.snapshot = { ...this.snapshot, blocks }
+    this.turns = turns
+  }
+
+  /** True when the in-memory window no longer holds the whole transcript. */
+  get isTrimmed(): boolean {
+    return this.trimmed
+  }
+
   /* ------------------------------------------------------------- lifecycle */
 
-  async start(): Promise<void> {
+  async start(resumeAcpSessionId?: string): Promise<void> {
     const child = spawn(this.agent.command, this.agent.args, {
       cwd: this.cwd,
       env: { ...process.env, ...(this.agent.env ?? {}) },
@@ -144,15 +185,40 @@ export class AgentSession extends EventEmitter {
       clientInfo: { name: 'Event Horizon', version: '0.1.0' }
     })
 
+    this.canLoadSession = init.agentCapabilities?.loadSession === true
     this.patch({
       agentName: init.agentInfo?.title ?? init.agentInfo?.name ?? this.agent.name,
       agentVersion: init.agentInfo?.version
     })
 
-    const session = await this.peer.request<NewSessionResponse>('session/new', {
-      cwd: this.cwd,
-      mcpServers: []
-    })
+    // Resume the agent's own session when it supports it, so the model keeps
+    // its conversation rather than merely the transcript being redrawn.
+    // Its replay is suppressed: we restored the record from disk already, and
+    // taking both would duplicate every block.
+    let session: NewSessionResponse | null = null
+    if (resumeAcpSessionId && this.canLoadSession) {
+      try {
+        this.replaying = true
+        session = await this.peer.request<NewSessionResponse>('session/load', {
+          sessionId: resumeAcpSessionId,
+          cwd: this.cwd,
+          mcpServers: []
+        })
+        // session/load may resolve without echoing the id back.
+        session = { ...(session ?? {}), sessionId: session?.sessionId ?? resumeAcpSessionId }
+      } catch {
+        session = null
+      } finally {
+        this.replaying = false
+      }
+    }
+
+    if (!session) {
+      session = await this.peer.request<NewSessionResponse>('session/new', {
+        cwd: this.cwd,
+        mcpServers: []
+      })
+    }
 
     this.patch({
       acpSessionId: session.sessionId,
@@ -233,6 +299,8 @@ export class AgentSession extends EventEmitter {
         this.finalizeStreamingBlocks()
         this.flushNow()
         this.patch({ status: 'idle' })
+        this.turns++
+        this.persistDirty = true
         this.emitEvent({
           type: 'session:turnEnded',
           sessionId: this.id,
@@ -444,6 +512,17 @@ export class AgentSession extends EventEmitter {
     // calls and plans, so a command that unexpectedly uses a tool can't leave
     // orphaned cards behind. Config and command advertisements still apply,
     // since those are session state rather than conversation.
+    // While replaying a loaded session the agent re-emits its history; ours is
+    // already restored, so only session-level state is taken from it.
+    if (this.replaying) {
+      if (
+        update.sessionUpdate !== 'available_commands_update' &&
+        update.sessionUpdate !== 'config_option_update'
+      ) {
+        return
+      }
+    }
+
     if (this.capture) {
       if (update.sessionUpdate === 'agent_message_chunk') {
         this.capture.text += textOf((update as any).content)
@@ -587,7 +666,15 @@ export class AgentSession extends EventEmitter {
   }
 
   private updateBlocks(fn: (blocks: ThreadBlock[]) => ThreadBlock[]): void {
-    this.snapshot = { ...this.snapshot, blocks: fn(this.snapshot.blocks) }
+    let blocks = fn(this.snapshot.blocks)
+    if (blocks.length > MAX_BLOCKS_IN_MEMORY) {
+      // Drop the oldest. They remain on disk and in the audit export; the
+      // alternative is unbounded growth in both the array and the DOM.
+      blocks = blocks.slice(-MAX_BLOCKS_IN_MEMORY)
+      this.trimmed = true
+    }
+    this.snapshot = { ...this.snapshot, blocks }
+    this.persistDirty = true
     this.scheduleFlush()
   }
 
@@ -615,6 +702,38 @@ export class AgentSession extends EventEmitter {
       type: 'session:blocks',
       sessionId: this.id,
       blocks: this.snapshot.blocks
+    })
+    this.persist()
+  }
+
+  /**
+   * Writes the transcript through to disk.
+   *
+   * A rewrite rather than an append because blocks mutate in place — a tool
+   * call reaching `completed`, a permission being answered — and an append-only
+   * log would record the pending state and never the resolution. The write is
+   * fire-and-forget: history must never delay a live turn.
+   */
+  private persist(): void {
+    if (!this.persistDirty) return
+    this.persistDirty = false
+    const { id, snapshot } = this
+    void rewriteBlocks(id, snapshot.blocks)
+    void upsertSession({
+      id,
+      title: snapshot.title,
+      cwd: snapshot.cwd,
+      agentId: snapshot.agentId,
+      toolProfile: snapshot.toolProfile,
+      acpSessionId: snapshot.acpSessionId,
+      createdAt: snapshot.createdAt,
+      updatedAt: Date.now(),
+      turns: this.turns,
+      lastMessage: [...snapshot.blocks]
+        .reverse()
+        .find((b) => b.kind === 'user')
+        ?.text.split('\n')[0]
+        .slice(0, 120)
     })
   }
 

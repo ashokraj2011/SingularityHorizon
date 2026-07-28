@@ -1,7 +1,16 @@
 import { useStore } from '../store'
 
 export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
-  const { order, sessions, activeId, setActive, closeSession } = useStore()
+  const {
+    order,
+    sessions,
+    activeId,
+    setActive,
+    closeSession,
+    persisted,
+    restoreSession,
+    forgetSession
+  } = useStore()
 
   return (
     <aside className="sidebar">
@@ -56,6 +65,43 @@ export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
             </div>
           )
         })}
+
+        {persisted.length > 0 && (
+          <>
+            <div className="sidebar-label" style={{ paddingLeft: 8 }}>
+              Earlier
+            </div>
+            {persisted.slice(0, 30).map((s) => (
+              <div
+                key={s.id}
+                className="session-item"
+                title={`${s.cwd}\n${s.turns} turn${s.turns === 1 ? '' : 's'} · ${new Date(s.updatedAt).toLocaleString()}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => void restoreSession(s.id)}
+                onKeyDown={(e) => e.key === 'Enter' && void restoreSession(s.id)}
+              >
+                <span className="dot" />
+                <span className="name">
+                  {s.title}
+                  {s.lastMessage && (
+                    <span className="sub"> — {s.lastMessage}</span>
+                  )}
+                </span>
+                <button
+                  className="close"
+                  title="Delete this session and its transcript"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void forgetSession(s.id)
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </aside>
   )

@@ -1405,3 +1405,9 @@ textarea {
   border-color: var(--blue);
   background: rgba(106, 155, 209, 0.12);
 }
+
+/* Earlier-session rows carry a second line of context. */
+.session-item .name .sub {
+  color: var(--text-faint);
+  font-size: 12px;
+}

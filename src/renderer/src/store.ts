@@ -7,6 +7,7 @@ import type {
   AttachmentSummary,
   MainEvent,
   SessionSnapshot,
+  PersistedSession,
   SkillInfo,
   ToolProfileInfo
 } from '@shared/ipc'
@@ -46,6 +47,11 @@ interface StoreState {
   applyEvent: (event: MainEvent) => void
   newSession: (cwd: string, agentId: string, toolProfile?: string) => Promise<void>
   toolProfiles: ToolProfileInfo[]
+  /** Sessions on disk from this and previous runs. */
+  persisted: PersistedSession[]
+  loadPersisted: () => Promise<void>
+  restoreSession: (id: string) => Promise<void>
+  forgetSession: (id: string) => Promise<void>
   closeSession: (id: string) => Promise<void>
   setActive: (id: string) => void
   send: (text: string) => Promise<void>
@@ -60,6 +66,7 @@ export const useStore = create<StoreState>((set, get) => ({
   activeId: null,
   agents: [],
   toolProfiles: [],
+  persisted: [],
   skills: {},
   attachments: {},
   hostContexts: {},
@@ -91,6 +98,7 @@ export const useStore = create<StoreState>((set, get) => ({
       activeId: sessions[0]?.id ?? null
     })
     for (const s of sessions) void get().loadSkills(s.id)
+    void get().loadPersisted()
   },
 
   applyEvent: (event) => {
@@ -176,6 +184,32 @@ export const useStore = create<StoreState>((set, get) => ({
 
   closeSession: async (id) => {
     await getApi().closeSession(id)
+    void get().loadPersisted()
+  },
+
+  loadPersisted: async () => {
+    try {
+      set({ persisted: await getApi().listPersisted() })
+    } catch {
+      set({ persisted: [] })
+    }
+  },
+
+  restoreSession: async (id) => {
+    set({ launching: true, launchError: null })
+    try {
+      await getApi().restoreSession(id)
+      void get().loadPersisted()
+    } catch (err) {
+      set({ launchError: (err as Error).message })
+    } finally {
+      set({ launching: false })
+    }
+  },
+
+  forgetSession: async (id) => {
+    await getApi().forgetSession(id)
+    void get().loadPersisted()
   },
 
   setActive: (id) => set({ activeId: id }),

@@ -145,6 +145,29 @@ export interface PromptRequest {
   skill?: InvokedSkill
 }
 
+/* ------------------------------------------------------------ persistence */
+
+/**
+ * A session's durable record. The transcript lives beside this in a JSONL file
+ * keyed by `id`; this is only what the session list needs to render without
+ * reading every transcript.
+ */
+export interface PersistedSession {
+  id: string
+  title: string
+  cwd: string
+  agentId: string
+  toolProfile?: string
+  /** The agent's own session id, for resuming via ACP session/load. */
+  acpSessionId?: string
+  createdAt: number
+  updatedAt: number
+  /** Completed prompt turns, for the list. */
+  turns: number
+  /** First line of the last user message, as a label. */
+  lastMessage?: string
+}
+
 /* ------------------------------------------------------------------ repo */
 
 /**
@@ -271,6 +294,12 @@ export interface DirEntry {
 export interface AcpStudioApi {
   listAgents(): Promise<AgentDefinition[]>
   listSessions(): Promise<SessionSnapshot[]>
+  /** Sessions on disk, including ones from previous runs. */
+  listPersisted(): Promise<PersistedSession[]>
+  /** Reopens a stored session: transcript from disk, agent reconnected. */
+  restoreSession(id: string): Promise<SessionSnapshot | null>
+  forgetSession(id: string): Promise<void>
+  exportAudit(id: string): Promise<unknown>
   listToolProfiles(): Promise<ToolProfileInfo[]>
   createSession(opts: {
     cwd: string

@@ -167,6 +167,28 @@ const fakeApi: AcpStudioApi = {
     providers: []
   }),
   preferredToolProfile: async () => 'lean',
+  listPersisted: async () => [
+    {
+      id: 'old-1',
+      title: 'yesterday',
+      cwd: '/fake/project',
+      agentId: 'fake',
+      createdAt: 1,
+      updatedAt: 2,
+      turns: 3,
+      lastMessage: 'where did we get to'
+    }
+  ],
+  restoreSession: async (id) => {
+    calls.push(`restore:${id}`)
+    const s = makeSession(id, '/fake/project')
+    emit({ type: 'session:created', session: s })
+    return s
+  },
+  forgetSession: async (id) => {
+    calls.push(`forget:${id}`)
+  },
+  exportAudit: async (id) => ({ session: null, approvals: [], commands: [], blocks: 0, id }),
   refreshAstIndex: async () => ({
     files: 2,
     symbols: 7,

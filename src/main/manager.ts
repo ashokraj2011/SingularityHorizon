@@ -1,8 +1,14 @@
 import { EventEmitter } from 'node:events'
 
-import type { MainEvent, PromptRequest, SessionSnapshot } from '../shared/ipc'
+import type { MainEvent, PersistedSession, PromptRequest, SessionSnapshot } from '../shared/ipc'
 import { AgentSession } from './acp/session'
 import { resolveAgent } from './agents'
+import {
+  deleteSession,
+  exportAudit,
+  listSessions as listPersistedSessions,
+  readBlocks
+} from './store/sessionStore'
 import { collectContextDocuments } from './providers/registry'
 
 /**
@@ -61,6 +67,62 @@ export class SessionManager extends EventEmitter {
     return session.getSnapshot()
   }
 
+  /** Sessions on disk, newest first, excluding ones already live. */
+  async listPersisted(): Promise<PersistedSession[]> {
+    const live = new Set([...this.sessions.values()].map((s) => s.id))
+    const stored = await listPersistedSessions()
+    return stored
+      .filter((s) => !live.has(s.id))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  /**
+   * Reopens a stored session.
+   *
+   * The transcript is restored from disk before the agent is contacted, so the
+   * window shows the conversation immediately; the agent is then asked to
+   * resume its own session, which is what preserves the model's context rather
+   * than only the record of it. If the agent cannot resume, the transcript is
+   * still there and the next turn simply starts a fresh agent context — a
+   * degraded outcome, not a failed one.
+   */
+  async restore(id: string): Promise<SessionSnapshot | null> {
+    const live = this.sessions.get(id)
+    if (live) return live.getSnapshot()
+
+    const stored = (await listPersistedSessions()).find((s) => s.id === id)
+    if (!stored) return null
+
+    const agent = await resolveAgent(stored.agentId, stored.toolProfile)
+    // No context documents on restore: grounding was injected when the
+    // session was first created and re-sending it would duplicate it.
+    const session = new AgentSession(agent, stored.cwd, [], { id: stored.id })
+    session.restoreBlocks(await readBlocks(id), stored.turns)
+
+    this.wire(session)
+    this.sessions.set(session.id, session)
+    this.emit('event', { type: 'session:created', session: session.getSnapshot() })
+
+    try {
+      await session.start(stored.acpSessionId)
+    } catch (err) {
+      this.emit('event', {
+        type: 'session:patch',
+        sessionId: session.id,
+        patch: { status: 'error', lastError: (err as Error).message }
+      })
+    }
+    return session.getSnapshot()
+  }
+
+  forget(id: string): Promise<void> {
+    return deleteSession(id)
+  }
+
+  audit(id: string): ReturnType<typeof exportAudit> {
+    return exportAudit(id)
+  }
+
   close(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
@@ -117,6 +179,20 @@ export class SessionManager extends EventEmitter {
     for (const session of this.sessions.values()) session.dispose()
     this.sessions.clear()
     this.providerContext.clear()
+  }
+
+  /** Routes a session's events outward and tracks its permission requests. */
+  private wire(session: AgentSession): void {
+    session.on('event', (event: MainEvent) => {
+      if (event.type === 'session:blocks') {
+        for (const block of event.blocks) {
+          if (block.kind === 'permission') {
+            this.permissionRoutes.set(block.request.requestId, event.sessionId)
+          }
+        }
+      }
+      this.emit('event', event)
+    })
   }
 
   private require(sessionId: string): AgentSession {

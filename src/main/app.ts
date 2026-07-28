@@ -170,6 +170,10 @@ handle('sessions:create', async (opts: { cwd: string; agentId: string; toolProfi
 })
 handle('prefs:toolProfile', (repoRoot?: string) => preferredToolProfile(repoRoot))
 handle('sessions:close', (sessionId: string) => manager.close(sessionId))
+handle('sessions:listPersisted', () => manager.listPersisted())
+handle('sessions:restore', (id: string) => manager.restore(id))
+handle('sessions:forget', (id: string) => manager.forget(id))
+handle('sessions:audit', (id: string) => manager.audit(id))
 handle('sessions:prompt', (sessionId: string, request: PromptRequest) =>
   manager.prompt(sessionId, request)
 )
