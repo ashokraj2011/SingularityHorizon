@@ -64,4 +64,23 @@ else
   echo "✓ session/store/ast layers are runnable outside electron"
 fi
 
+# 7. Every bundled harness must keep TypeScript external.
+#
+# esbuild inlines the compiler into an ESM bundle, where its internal
+# require("fs") throws "Dynamic require of 'fs' is not supported" at import
+# time — before a single assertion runs. The suite then reports nothing rather
+# than failing, which is how profile:check sat broken while the harnesses I ran
+# individually stayed green.
+missing=$(node -e '
+const s = require("./package.json").scripts;
+process.stdout.write(Object.entries(s)
+  .filter(([, v]) => v.includes("esbuild") && v.includes("--format=esm") && !v.includes("--external:typescript"))
+  .map(([k]) => k).join(", "));
+')
+if [ -n "$missing" ]; then
+  echo "✗ esm harness missing --external:typescript: $missing"; fail=1
+else
+  echo "✓ every esm harness keeps typescript external"
+fi
+
 exit $fail

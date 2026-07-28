@@ -18,6 +18,47 @@ npm run dev
 
 Requires an ACP-capable agent on your PATH. For Copilot: `brew install copilot-cli && copilot login`.
 
+Behind a private registry (Artifactory, Nexus, Verdaccio), use `npm run setup` instead of
+`npm install` — see [Installing from an internal registry](#installing-from-an-internal-registry).
+
+## Installing from an internal registry
+
+```bash
+export ARTIFACTORY_TOKEN=<token>
+npm run setup -- --registry https://artifactory.corp/artifactory/api/npm/npm-virtual/
+```
+
+That writes a project-local `.npmrc`, checks the registry answers, and runs the install. `--scope
+@acme` routes only that scope and leaves the public registry serving everything else; `--username`
+switches to basic auth; `--no-auth` covers an IP-allowlisted mirror; `--ci` uses the lockfile.
+`--dry-run` prints the `.npmrc` without writing it. `npm run setup -- --help` lists the rest.
+
+**The token is never written to disk.** The `.npmrc` gets `${ARTIFACTORY_TOKEN}` and npm expands it
+at read time. The catch this script exists to handle: npm leaves an *unset* variable as the literal
+string `${ARTIFACTORY_TOKEN}`, which travels to the registry as your credential and returns a 401
+that blames the token. So the variable is checked before anything runs.
+
+### Electron does not come from the npm registry
+
+Its postinstall downloads the binary from `github.com/electron/electron/releases`, and
+electron-builder pulls its own toolchain from GitHub. On a network that only permits the internal
+mirror, pointing npm at Artifactory succeeds at metadata and *then* fails at the download:
+
+```bash
+npm run setup -- \
+  --registry         https://artifactory.corp/artifactory/api/npm/npm-virtual/ \
+  --electron-mirror  https://artifactory.corp/artifactory/github/electron/electron/releases/download/ \
+  --electron-builder-mirror https://artifactory.corp/artifactory/github/electron-builder/
+```
+
+Both are written into the `.npmrc` as `electron_mirror` / `electron_builder_binaries_mirror`, which
+is where `@electron/get` and `app-builder-lib` look first — so a later plain `npm install` still
+resolves them without re-running setup.
+
+If the network terminates TLS with its own CA, add `--cafile /path/to/corp-ca.pem`. That sets npm's
+`cafile` *and* exports `NODE_EXTRA_CA_CERTS`, because the binary downloads use Node's https stack
+directly and never see npm's setting.
+
 ## What it does
 
 - **Streaming chat** — assistant text, collapsible reasoning, and tool calls interleaved in the real order they happened.
@@ -234,6 +275,7 @@ moves the bill.
 ```bash
 npm run check              # everything below, in order
 npm run smoke              # one real prompt turn, end to end
+npm run install:check      # registry config is correct and never contains a token
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent
