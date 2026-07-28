@@ -10,7 +10,7 @@ import { useActiveSession, useStore } from './store'
 export function App(): React.JSX.Element {
   const { bootstrap, applyEvent, agents, newSession, launching, launchError, cancel } = useStore()
   const activeId = useStore((s) => s.activeId)
-  const loadPolicy = useStore((s) => s.loadPolicy)
+  const loadAdminPolicy = useStore((s) => s.loadAdminPolicy)
   const session = useActiveSession()
   const [agentId, setAgentId] = useState('copilot')
   // Tool profile is a spawn flag, so it must be chosen before the session
@@ -22,8 +22,8 @@ export function App(): React.JSX.Element {
   // (click, host activation, create, close). Watching the resulting state is
   // the only way to catch all of them.
   useEffect(() => {
-    void loadPolicy()
-  }, [activeId, loadPolicy])
+    void loadAdminPolicy()
+  }, [activeId, loadAdminPolicy])
 
   useEffect(() => {
     void bootstrap()

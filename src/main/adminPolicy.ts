@@ -2,10 +2,15 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
-import type { Policy } from '../shared/ipc'
+import type { AdminPolicy } from '../shared/ipc'
 
 /**
- * Administrative policy.
+ * Administrative policy — what an organisation or a repository permits.
+ *
+ * Not to be confused with acp/policy.ts, which is the per-session capability
+ * gate. This one answers "is this user allowed to pick that model"; that one
+ * answers "may this call touch the machine right now". They compose: an admin
+ * policy can forbid Allow-All, and the gate is what makes the refusal stick.
  *
  * Read from, in increasing precedence:
  *   1. `~/.event-horizon/policy.json`      — the user's own defaults
@@ -28,9 +33,9 @@ import type { Policy } from '../shared/ipc'
  * would let a typo lock someone out of their own tool.
  */
 
-export const EMPTY_POLICY: Policy = {}
+export const EMPTY_POLICY: AdminPolicy = {}
 
-function merge(base: Policy, next: Policy): Policy {
+function merge(base: AdminPolicy, next: AdminPolicy): AdminPolicy {
   return {
     ...base,
     ...next,
@@ -46,9 +51,9 @@ function intersect(a?: string[], b?: string[]): string[] | undefined {
   return a.filter((x) => b.includes(x))
 }
 
-async function readPolicyFile(path: string): Promise<Policy | null> {
+async function readPolicyFile(path: string): Promise<AdminPolicy | null> {
   try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as Policy
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as AdminPolicy
     return parsed && typeof parsed === 'object' ? parsed : null
   } catch {
     return null
@@ -71,13 +76,13 @@ function policyChain(dir: string): string[] {
   return found.reverse()
 }
 
-let cached: { key: string; policy: Policy } | null = null
+let cached: { key: string; policy: AdminPolicy } | null = null
 
-export async function loadPolicy(workingDir?: string): Promise<Policy> {
+export async function loadPolicy(workingDir?: string): Promise<AdminPolicy> {
   const key = workingDir ?? ''
   if (cached?.key === key) return cached.policy
 
-  let policy: Policy = { ...EMPTY_POLICY }
+  let policy: AdminPolicy = { ...EMPTY_POLICY }
 
   const user = await readPolicyFile(join(homedir(), '.event-horizon', 'policy.json'))
   if (user) policy = merge(policy, user)
@@ -106,15 +111,15 @@ export function invalidatePolicy(): void {
 
 /* ------------------------------------------------------------ enforcement */
 
-export function enforceToolProfile(policy: Policy, requested?: string): string | undefined {
+export function enforceToolProfile(policy: AdminPolicy, requested?: string): string | undefined {
   return policy.pinToolProfile ?? requested
 }
 
-export function agentAllowed(policy: Policy, agentId: string): boolean {
+export function agentAllowed(policy: AdminPolicy, agentId: string): boolean {
   return !policy.allowedAgents || policy.allowedAgents.includes(agentId)
 }
 
-export function modelAllowed(policy: Policy, modelId: string): boolean {
+export function modelAllowed(policy: AdminPolicy, modelId: string): boolean {
   return !policy.allowedModels || policy.allowedModels.includes(modelId)
 }
 
@@ -126,7 +131,7 @@ export function modelAllowed(policy: Policy, modelId: string): boolean {
  * bugs.
  */
 export function configChangeRefusal(
-  policy: Policy,
+  policy: AdminPolicy,
   optionId: string,
   value: string
 ): string | null {

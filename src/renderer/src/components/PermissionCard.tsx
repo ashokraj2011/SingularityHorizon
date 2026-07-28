@@ -15,7 +15,7 @@ export function PermissionCard({ request }: { request: PendingPermission }): Rea
   // button also *answers* the prompt — so leaving it visible would half-work:
   // the action gets approved while the bypass is refused, and the user is left
   // reading an error about something they did not intend to do.
-  const allowAllBlocked = useStore((s) => s.policy.disableAllowAll === true)
+  const allowAllBlocked = useStore((s) => s.adminPolicy.disableAllowAll === true)
   const resolved = request.resolvedOptionId !== undefined || request.cancelled
   const command =
     typeof request.toolCall.rawInput?.command === 'string'

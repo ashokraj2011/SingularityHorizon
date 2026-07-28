@@ -243,7 +243,7 @@ export interface AuditRecord {
  * Administrative restrictions. Enforced in the main process; the renderer reads
  * this only to explain why a control is unavailable.
  */
-export interface Policy {
+export interface AdminPolicy {
   /** Force every session onto this tool profile, ignoring the picker. */
   pinToolProfile?: string
   /** Only these agents may be launched. */
@@ -422,7 +422,7 @@ export interface AcpStudioApi {
   forgetSession(id: string): Promise<void>
   usageSummary(): Promise<UsageSummary>
   /** Policy in force for a working directory (omit for the global default). */
-  getPolicy(workingDir?: string): Promise<Policy>
+  getAdminPolicy(workingDir?: string): Promise<AdminPolicy>
   exportAudit(id: string): Promise<AuditRecord>
   /** Writes an audit record to a file the user chooses. Returns the path. */
   saveAudit(id: string, format: 'json' | 'markdown'): Promise<string | null>

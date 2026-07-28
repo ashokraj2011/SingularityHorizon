@@ -18,7 +18,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
   const [panelOpen, setPanelOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
-  const policy = useStore((s) => s.policy)
+  const policy = useStore((s) => s.adminPolicy)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {

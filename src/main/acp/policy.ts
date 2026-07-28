@@ -1,7 +1,11 @@
 import type { SessionMode, ToolClass } from '../../shared/ipc'
 
 /**
- * Client-side capability enforcement.
+ * Client-side capability enforcement — the per-session gate.
+ *
+ * Not to be confused with main/adminPolicy.ts, which is org and repository
+ * configuration. That one decides what a user may choose; this one decides
+ * whether a given call runs at all.
  *
  * ACP asks agents to call `session/request_permission` before doing anything
  * consequential, but nothing makes them. An agent can call `terminal/create`

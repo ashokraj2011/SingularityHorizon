@@ -19,8 +19,8 @@ import {
   invalidatePolicy,
   loadPolicy,
   modelAllowed
-} from '../src/main/policy'
-import type { PersistedSession, Policy } from '../src/shared/ipc'
+} from '../src/main/adminPolicy'
+import type { AdminPolicy, PersistedSession } from '../src/shared/ipc'
 
 const checks: Array<[string, boolean, string?]> = []
 const ok = (n: string, p: boolean, d?: string): void => { checks.push([n, p, d]) }
@@ -106,7 +106,7 @@ ok('an empty history summarizes cleanly', summarizeUsage([]).totalSessions === 0
 
 /* -------------------------------------------------------------- policy */
 
-const strict: Policy = {
+const strict: AdminPolicy = {
   pinToolProfile: 'lean',
   allowedAgents: ['copilot'],
   allowedModels: ['claude-sonnet-5', 'claude-haiku-4.5'],

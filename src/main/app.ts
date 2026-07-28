@@ -24,7 +24,7 @@ import {
   configChangeRefusal,
   enforceToolProfile,
   loadPolicy
-} from './policy'
+} from './adminPolicy'
 import { configureStore } from './store/sessionStore'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
@@ -184,7 +184,7 @@ handle('agents:list', async () => {
   const policy = await loadPolicy()
   return (await availableAgents()).filter((a) => agentAllowed(policy, a.id))
 })
-handle('policy:get', (workingDir?: string) => loadPolicy(workingDir))
+handle('adminPolicy:get', (workingDir?: string) => loadPolicy(workingDir))
 handle('sessions:list', () => manager.list())
 handle('agents:toolProfiles', () =>
   TOOL_PROFILES.map(({ id, name, description, measuredOverhead }) => ({

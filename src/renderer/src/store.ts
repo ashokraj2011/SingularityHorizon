@@ -8,7 +8,7 @@ import type {
   MainEvent,
   SessionSnapshot,
   PersistedSession,
-  Policy,
+  AdminPolicy,
   SkillInfo,
   ToolProfileInfo
 } from '@shared/ipc'
@@ -41,8 +41,8 @@ interface StoreState {
    */
   expandedTools: Record<string, boolean>
   /** Administrative restrictions; the UI reads these only to explain itself. */
-  policy: Policy
-  loadPolicy: () => Promise<void>
+  adminPolicy: AdminPolicy
+  loadAdminPolicy: () => Promise<void>
   toggleTool: (toolCallId: string, open: boolean) => void
   launching: boolean
   launchError: string | null
@@ -83,7 +83,7 @@ export const useStore = create<StoreState>((set, get) => ({
   attachments: {},
   hostContexts: {},
   expandedTools: {},
-  policy: {},
+  adminPolicy: {},
   launching: false,
   launchError: null,
 
@@ -374,16 +374,16 @@ export const useStore = create<StoreState>((set, get) => ({
     if (activeId) void getApi().cancel(activeId)
   },
 
-  loadPolicy: async () => {
+  loadAdminPolicy: async () => {
     // Scoped to the active session's directory: policy is per-workspace, so
     // asking without one would show the user a weaker policy than the one the
     // main process will actually enforce on them.
     const { activeId, sessions } = get()
     const cwd = activeId ? sessions[activeId]?.cwd : undefined
     try {
-      set({ policy: await getApi().getPolicy(cwd) })
+      set({ adminPolicy: await getApi().getAdminPolicy(cwd) })
     } catch {
-      set({ policy: {} })
+      set({ adminPolicy: {} })
     }
   },
 

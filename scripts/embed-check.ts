@@ -188,7 +188,7 @@ const fakeApi: AcpStudioApi = {
   forgetSession: async (id) => {
     calls.push(`forget:${id}`)
   },
-  getPolicy: async () => ({}),
+  getAdminPolicy: async () => ({}),
   usageSummary: async () => ({
     totalSessions: 0,
     sessionsWithUsage: 0,
