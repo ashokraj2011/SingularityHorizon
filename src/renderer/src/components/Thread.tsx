@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useCallback, useRef, useState } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 
 import type { SessionSnapshot, ThreadBlock } from '@shared/ipc'
 import { Markdown } from './Markdown'
@@ -6,60 +7,93 @@ import { PermissionCard } from './PermissionCard'
 import { PlanCard } from './PlanCard'
 import { ToolCard } from './ToolCard'
 
-export function Thread({ session }: { session: SessionSnapshot }): React.JSX.Element {
-  const ref = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
+/**
+ * The transcript, virtualized.
+ *
+ * Rendering every block was the app's known ceiling: 2,000 blocks measured at
+ * ~10,700 DOM nodes with plain content, and far worse in practice because
+ * syntax-highlighted code turns one block into hundreds of spans. Persistence
+ * made that likelier by encouraging sessions long enough to reach it.
+ *
+ * Virtuoso rather than a hand-rolled window because block heights are unknown
+ * and variable — prose, diffs, tool cards that expand — and because
+ * "stick to the bottom while streaming unless the user has scrolled away" is
+ * exactly the behaviour it implements and exactly the behaviour that is fiddly
+ * to get right by hand.
+ */
 
-  // Follow the tail while streaming, but stop fighting the user the moment
-  // they scroll up to read something.
-  const onScroll = (): void => {
-    const el = ref.current
-    if (!el) return
-    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-  }
-
-  useEffect(() => {
-    if (pinned.current && ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight
-    }
-  }, [session.blocks])
-
+/**
+ * Each item is its own flex column so `align-self` still positions user
+ * messages to the right; the virtualizer gives every item its own wrapper, so
+ * the old `gap` on a single shared parent no longer applies.
+ */
+function Item({ block }: { block: ThreadBlock }): React.JSX.Element {
   return (
-    <div className="thread" ref={ref} onScroll={onScroll}>
-      <div className="thread-inner">
-        {session.contextDocuments && session.contextDocuments.length > 0 && (
-          <details className="session-grounding">
-            <summary>
-              <span>Singularity grounding active</span>
-              <span>{session.contextDocuments.length} context source{session.contextDocuments.length === 1 ? '' : 's'}</span>
-            </summary>
-            <p>The selected phase contract, persona, repository world views, and governed evidence are injected with the first prompt.</p>
-            <ul>
-              {session.contextDocuments.map((document, index) => (
-                <li key={`${document.providerId}:${document.title}:${index}`}>
-                  <span className={`grounding-kind ${document.kind ?? 'evidence'}`}>
-                    {document.kind === 'instructions' ? 'Instructions' : 'Evidence'}
-                  </span>
-                  <span>
-                    <strong>{document.title}</strong>
-                    {document.reason && <small>{document.reason}</small>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-        {session.blocks.map((block) => (
-          <Block key={block.id} block={block} />
-        ))}
+    <div className="thread-item">
+      <Block block={block} />
+    </div>
+  )
+}
+
+/** Keeps the centred, max-width column the non-virtualized layout had. */
+const List = forwardRef<HTMLDivElement, { style?: React.CSSProperties; children?: React.ReactNode }>(
+  function List({ style, children, ...rest }, ref) {
+    return (
+      <div ref={ref} {...rest} style={style} className="thread-inner">
+        {children}
+      </div>
+    )
+  }
+)
+
+export function Thread({ session }: { session: SessionSnapshot }): React.JSX.Element {
+  const ref = useRef<VirtuosoHandle>(null)
+  const [atBottom, setAtBottom] = useState(true)
+
+  const Footer = useCallback(
+    () => (
+      <div className="thread-footer">
         {session.status === 'busy' && !hasStreamingTail(session.blocks) && (
           <div className="hint">Working…</div>
         )}
-        {session.lastError && (
-          <div className="notice error">{session.lastError}</div>
-        )}
-        <div style={{ height: 8 }} />
+        {session.lastError && <div className="notice error">{session.lastError}</div>}
       </div>
+    ),
+    [session.status, session.blocks, session.lastError]
+  )
+
+  return (
+    <div className="thread-wrap">
+      <Virtuoso
+        ref={ref}
+        className="thread"
+        data={session.blocks}
+        computeItemKey={(_, block) => block.id}
+        itemContent={(_, block) => <Item block={block} />}
+        components={{ List, Footer }}
+        // "auto" follows the tail only while the user is already at the bottom,
+        // so streaming never yanks the view away from something being read.
+        followOutput="auto"
+        atBottomStateChange={setAtBottom}
+        atBottomThreshold={80}
+        initialTopMostItemIndex={Math.max(0, session.blocks.length - 1)}
+        increaseViewportBy={{ top: 600, bottom: 600 }}
+      />
+
+      {!atBottom && (
+        <button
+          className="jump-latest"
+          onClick={() =>
+            ref.current?.scrollToIndex({
+              index: session.blocks.length - 1,
+              align: 'end',
+              behavior: 'smooth'
+            })
+          }
+        >
+          Jump to latest ↓
+        </button>
+      )}
     </div>
   )
 }
@@ -93,7 +127,9 @@ function Block({ block }: { block: ThreadBlock }): React.JSX.Element | null {
                           ? 'by reference'
                           : a.truncated
                             ? 'truncated'
-                            : 'embedded'}
+                            : a.mode === 'outline'
+                              ? 'outline'
+                              : 'embedded'}
                   </span>
                 </span>
               ))}

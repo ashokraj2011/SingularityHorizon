@@ -1,6 +1,6 @@
-import { useState } from 'react'
 
 import type { ContentBlock, ToolCall, ToolCallContent } from '@shared/acp'
+import { useStore } from '../store'
 import { DiffView } from './DiffView'
 
 const KIND_ICON: Record<string, string> = {
@@ -18,8 +18,13 @@ const KIND_ICON: Record<string, string> = {
 
 export function ToolCard({ call }: { call: ToolCall }): React.JSX.Element {
   const status = call.status ?? 'pending'
-  // Failures start open — that's the case you always want to read.
-  const [open, setOpen] = useState(status === 'failed')
+  const toggleTool = useStore((s) => s.toggleTool)
+  const explicit = useStore((s) => s.expandedTools[call.toolCallId])
+  // Failures start open — that's the case you always want to read. An explicit
+  // choice overrides it, and lives in the store so scrolling a card out of
+  // view (which unmounts it) does not quietly discard the choice.
+  const open = explicit ?? status === 'failed'
+  const setOpen = (next: boolean): void => toggleTool(call.toolCallId, next)
 
   const command = typeof call.rawInput?.command === 'string' ? call.rawInput.command : null
   const contents = call.content ?? []

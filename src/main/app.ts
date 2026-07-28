@@ -90,19 +90,41 @@ function createWindow(): void {
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
     console.error('[renderer] process gone:', details.reason)
   })
-  const onConsoleMessage = (_event: unknown, details: {
-    level: 'verbose' | 'info' | 'warning' | 'error'
-    message: string
-    sourceId: string
-    lineNumber: number
-  }): void => {
-    if (details.level === 'warning' || details.level === 'error') {
-      console.error(`[renderer] ${details.message} (${details.sourceId}:${details.lineNumber})`)
+  /**
+   * Forwards renderer console errors to the main process log.
+   *
+   * The signature changed across Electron majors: 33 passes
+   * (event, level, message, line, sourceId) positionally, 43 passes a single
+   * details object. Handling both matters because getting it wrong fails
+   * silently — the listener runs, reads undefined, and forwards nothing, so
+   * renderer errors simply stop appearing and the app looks healthy.
+   */
+  const onConsoleMessage = (...args: unknown[]): void => {
+    const [a, b, c, d] = args
+    let level: string | number | undefined
+    let message: string | undefined
+    let source: string | undefined
+    let line: number | undefined
+
+    if (a && typeof a === 'object' && 'message' in (a as object)) {
+      const details = a as { level: string; message: string; sourceId?: string; lineNumber?: number }
+      level = details.level
+      message = details.message
+      source = details.sourceId
+      line = details.lineNumber
+    } else {
+      level = b as string | number
+      message = c as string
+      line = d as number
+      source = args[4] as string
+    }
+
+    const isProblem =
+      level === 'warning' || level === 'error' || (typeof level === 'number' && level >= 2)
+    if (isProblem && message) {
+      console.error(`[renderer] ${message}${source ? ` (${source}:${line ?? 0})` : ''}`)
     }
   }
-  // Electron 43 passes one details object. The upstream standalone still
-  // typechecks against Electron 33, whose declaration exposes the deprecated
-  // five-argument callback, so keep the runtime-correct two-argument handler.
   mainWindow.webContents.on('console-message', onConsoleMessage as never)
   setTimeout(reveal, 4000)
 

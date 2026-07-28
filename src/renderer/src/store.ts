@@ -32,6 +32,14 @@ interface StoreState {
   attachments: Record<string, AttachmentSummary[]>
   /** Opaque host context keyed by working directory; core never reads it. */
   hostContexts: Record<string, unknown>
+  /**
+   * Which tool cards the user has explicitly opened or closed, keyed by
+   * toolCallId. Held here rather than in the component because virtualization
+   * unmounts off-screen cards — local state would silently reset every time one
+   * scrolled out of view.
+   */
+  expandedTools: Record<string, boolean>
+  toggleTool: (toolCallId: string, open: boolean) => void
   launching: boolean
   launchError: string | null
   loadSkills: (sessionId: string) => Promise<void>
@@ -70,6 +78,7 @@ export const useStore = create<StoreState>((set, get) => ({
   skills: {},
   attachments: {},
   hostContexts: {},
+  expandedTools: {},
   launching: false,
   launchError: null,
 
@@ -213,6 +222,9 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   setActive: (id) => set({ activeId: id }),
+
+  toggleTool: (toolCallId, open) =>
+    set({ expandedTools: { ...get().expandedTools, [toolCallId]: open } }),
 
   send: async (text) => {
     const state = get()
