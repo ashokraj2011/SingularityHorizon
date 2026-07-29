@@ -49,6 +49,8 @@ interface StoredEndpoint {
   baseUrl: string
   models: string[]
   defaultModel?: string
+  wireApi?: 'completions' | 'responses'
+  useForCopilot?: boolean
   /** Ciphertext, base64. Absent when the keychain was unavailable at save. */
   keyCipher?: string
   createdAt: number
@@ -103,7 +105,9 @@ function redact(e: StoredEndpoint, defaultId?: string): LlmEndpoint {
     models: e.models,
     defaultModel: e.defaultModel,
     hasKey: !!e.keyCipher,
-    isDefault: e.id === defaultId
+    isDefault: e.id === defaultId,
+    wireApi: e.wireApi,
+    useForCopilot: e.useForCopilot
   }
 }
 
@@ -157,6 +161,8 @@ export async function saveEndpoint(input: LlmEndpointInput): Promise<SaveOutcome
     baseUrl,
     models: input.models.map((m) => m.trim()).filter(Boolean),
     defaultModel: input.defaultModel ?? input.models[0],
+    wireApi: input.wireApi,
+    useForCopilot: input.useForCopilot,
     keyCipher,
     createdAt: existing?.createdAt ?? Date.now()
   }
@@ -264,5 +270,52 @@ export async function testEndpoint(id: string): Promise<EndpointTest> {
     return { ok: false, message: `${res.status} ${res.statusText}` }
   } catch (error) {
     return { ok: false, message: `Could not reach ${chosen.baseUrl}: ${(error as Error).message}` }
+  }
+}
+
+/**
+ * Copilot's BYOK environment, from a configured endpoint.
+ *
+ * Copilot CLI can be pointed at any provider by setting COPILOT_PROVIDER_*,
+ * which means the same gateway can drive Copilot's harness and this app's own
+ * one. Two details from `copilot help providers` that are easy to get wrong:
+ * the variables are not namespaced per provider — it is COPILOT_PROVIDER_TYPE
+ * plus one COPILOT_PROVIDER_BASE_URL, not COPILOT_PROVIDER_OPENAI_BASE_URL —
+ * and BYOK will not start without a model, so COPILOT_MODEL is required rather
+ * than optional.
+ *
+ * Returns nothing unless an endpoint explicitly opted in. Rerouting Copilot
+ * away from GitHub's own model routing is a large, silent behaviour change if
+ * it happens by default, and the failure would look like Copilot being broken.
+ */
+export async function copilotProviderEnv(id?: string): Promise<Record<string, string>> {
+  const store = await load()
+  const chosen = id
+    ? store.endpoints.find((e) => e.id === id)
+    : store.endpoints.find((e) => e.useForCopilot)
+  if (!chosen || !chosen.useForCopilot) return {}
+
+  const model = chosen.defaultModel ?? chosen.models[0]
+  // Without a model BYOK refuses to start, and an endpoint with none
+  // configured would break Copilot rather than redirect it.
+  if (!model) return {}
+
+  let key: string | undefined
+  if (chosen.keyCipher) {
+    try {
+      key = cipher.decrypt(chosen.keyCipher)
+    } catch {
+      key = undefined
+    }
+  }
+
+  return {
+    COPILOT_PROVIDER_BASE_URL: chosen.baseUrl,
+    COPILOT_PROVIDER_TYPE: chosen.provider,
+    COPILOT_MODEL: model,
+    ...(key ? { COPILOT_PROVIDER_API_KEY: key } : {}),
+    // Defaults to "completions"; the GPT-5 series needs "responses", which is
+    // why this is worth carrying rather than assuming.
+    ...(chosen.wireApi ? { COPILOT_PROVIDER_WIRE_API: chosen.wireApi } : {})
   }
 }

@@ -15,6 +15,7 @@ import { join } from 'node:path'
 
 import {
   configureEndpoints,
+  copilotProviderEnv,
   deleteEndpoint,
   endpointEnv,
   listEndpoints,
@@ -122,6 +123,82 @@ ok('the warning explains where to put the key instead',
    (unencrypted.warning ?? '').includes('environment'))
 ok('nothing on disk contains the key',
    !readFileSync(join(plainDir, 'endpoints.json'), 'utf8').includes(SECRET))
+
+/* ------------------------------------------------- driving Copilot instead */
+
+// Copilot CLI can be pointed at any provider through COPILOT_PROVIDER_*, so the
+// same gateway can drive its harness and the built-in one. Verified against
+// `copilot help providers` at 1.0.75, which is also where the shape of these
+// names comes from — they are not namespaced per provider.
+configureEndpoints(mkdtempSync(join(tmpdir(), 'eh-copilot-')), fakeCipher)
+
+const notOptedIn = await saveEndpoint({
+  name: 'Gateway',
+  provider: 'openai',
+  baseUrl: 'https://gateway.corp/v1',
+  models: ['gpt-5.4'],
+  apiKey: SECRET
+})
+// The default has to be "leave Copilot alone". Silently redirecting it away
+// from GitHub's routing would look like Copilot being broken.
+ok('an endpoint does not drive Copilot unless asked',
+   Object.keys(await copilotProviderEnv()).length === 0)
+
+await saveEndpoint({
+  id: notOptedIn.endpoint.id,
+  name: 'Gateway',
+  provider: 'openai',
+  baseUrl: 'https://gateway.corp/v1',
+  models: ['gpt-5.4'],
+  useForCopilot: true,
+  wireApi: 'responses'
+})
+const byok = await copilotProviderEnv()
+
+ok('opting in produces a BYOK environment', Object.keys(byok).length > 0)
+// One base URL and a separate type — not COPILOT_PROVIDER_OPENAI_BASE_URL.
+ok('the base URL uses the un-namespaced variable',
+   byok.COPILOT_PROVIDER_BASE_URL === 'https://gateway.corp/v1', JSON.stringify(byok.COPILOT_PROVIDER_BASE_URL))
+ok('the provider type is a separate variable', byok.COPILOT_PROVIDER_TYPE === 'openai')
+ok('the key is carried', byok.COPILOT_PROVIDER_API_KEY === SECRET)
+// BYOK will not start without one, so an endpoint that cannot supply a model
+// must not half-configure Copilot.
+ok('a model is always set, because BYOK refuses to start without one',
+   byok.COPILOT_MODEL === 'gpt-5.4', byok.COPILOT_MODEL)
+ok('the wire API is passed when set', byok.COPILOT_PROVIDER_WIRE_API === 'responses')
+
+const anthropicEndpoint = await saveEndpoint({
+  name: 'Anthropic',
+  provider: 'anthropic',
+  baseUrl: 'https://api.anthropic.com',
+  models: ['claude-sonnet-5'],
+  useForCopilot: true
+})
+ok('the anthropic type maps through',
+   (await copilotProviderEnv(anthropicEndpoint.endpoint.id)).COPILOT_PROVIDER_TYPE === 'anthropic')
+ok('and an endpoint with no key sends none',
+   (await copilotProviderEnv(anthropicEndpoint.endpoint.id)).COPILOT_PROVIDER_API_KEY === undefined)
+ok('the default wire API is left unset rather than guessed',
+   (await copilotProviderEnv(anthropicEndpoint.endpoint.id)).COPILOT_PROVIDER_WIRE_API === undefined)
+
+// Naming an endpoint explicitly must not opt it in — the flag is the opt-in,
+// not the fact that somebody referred to it.
+const neverOptedIn = await saveEndpoint({
+  name: 'Plain endpoint',
+  provider: 'openai',
+  baseUrl: 'https://plain.corp/v1',
+  models: ['gpt-5.4']
+})
+ok('naming an endpoint that never opted in yields nothing',
+   Object.keys(await copilotProviderEnv(neverOptedIn.endpoint.id)).length === 0,
+   JSON.stringify(await copilotProviderEnv(neverOptedIn.endpoint.id)))
+
+// An opted-in endpoint with no model would half-configure Copilot, which BYOK
+// refuses to start with — worse than leaving it alone.
+ok('an opted-in endpoint always carries a model',
+   !!(await copilotProviderEnv()).COPILOT_MODEL)
+
+configureEndpoints(dir, fakeCipher)
 
 /* ------------------------------------------------------------ validation */
 

@@ -407,6 +407,18 @@ export interface LlmEndpoint {
   defaultModel?: string
   hasKey: boolean
   isDefault: boolean
+  /**
+   * Copilot's BYOK wire API. Only consulted when routing Copilot through this
+   * endpoint; the built-in harness always speaks chat completions.
+   */
+  wireApi?: 'completions' | 'responses'
+  /**
+   * Route GitHub Copilot CLI through this endpoint too, via its BYOK
+   * environment variables. Off by default and deliberately explicit: silently
+   * redirecting Copilot away from GitHub's own routing would break a working
+   * setup in a way nobody would think to look for.
+   */
+  useForCopilot?: boolean
 }
 
 export interface LlmEndpointInput {
@@ -417,6 +429,8 @@ export interface LlmEndpointInput {
   baseUrl: string
   models: string[]
   defaultModel?: string
+  wireApi?: 'completions' | 'responses'
+  useForCopilot?: boolean
   /** Omit to leave a stored key untouched; empty string clears it. */
   apiKey?: string
 }

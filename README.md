@@ -140,6 +140,18 @@ becomes an incident.
 
 Everything talks over plain `fetch` with no SDK dependency.
 
+**The same endpoint can drive Copilot CLI.** Tick *Also route GitHub Copilot CLI here (BYOK)* and
+Copilot is spawned with its `COPILOT_PROVIDER_*` variables pointed at your gateway, so you get
+Copilot's harness running on your own models — and **no GitHub sign-in is required in BYOK mode**.
+Off by default: silently redirecting Copilot away from GitHub's own routing would look like Copilot
+being broken.
+
+Two details from `copilot help providers` (verified against 1.0.75) that are easy to get wrong:
+the variables are **not namespaced per provider** — it is one `COPILOT_PROVIDER_BASE_URL` plus
+`COPILOT_PROVIDER_TYPE`, not `COPILOT_PROVIDER_OPENAI_BASE_URL` — and **BYOK will not start without
+a model**, so `COPILOT_MODEL` is required rather than optional. Both are handled here. The GPT-5
+series also needs the `responses` wire API, which is a per-endpoint choice rather than a guess.
+
 **The harness is written as a real ACP agent, not as a special case inside the app.** That is the
 whole design: the transcript, tool cards, permission gate, workflow runtime, persistence and audit
 export already work against ACP, so none of them needs a second code path — and the gate applies to

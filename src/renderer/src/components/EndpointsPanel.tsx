@@ -48,7 +48,9 @@ export function EndpointsPanel({ onClose }: { onClose: () => void }): React.JSX.
       provider: endpoint.provider,
       baseUrl: endpoint.baseUrl,
       models: endpoint.models,
-      defaultModel: endpoint.defaultModel
+      defaultModel: endpoint.defaultModel,
+      wireApi: endpoint.wireApi,
+      useForCopilot: endpoint.useForCopilot
       // apiKey deliberately absent: undefined means "leave what is stored".
     })
     setModelsText(endpoint.models.join(', '))
@@ -117,6 +119,7 @@ export function EndpointsPanel({ onClose }: { onClose: () => void }): React.JSX.
                 <div className="endpoint-url">{e.baseUrl}</div>
                 <div className="endpoint-models">
                   {e.provider} · {e.models.join(', ')}
+                  {e.useForCopilot && ' · also drives Copilot CLI'}
                 </div>
               </div>
               <div className="endpoint-actions">
@@ -201,6 +204,34 @@ export function EndpointsPanel({ onClose }: { onClose: () => void }): React.JSX.
                     onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
                   />
                 </label>
+                <label className="endpoint-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.useForCopilot ?? false}
+                    onChange={(e) => setDraft({ ...draft, useForCopilot: e.target.checked })}
+                  />
+                  <span>
+                    Also route GitHub Copilot CLI here (BYOK). Copilot then uses this endpoint
+                    instead of GitHub&rsquo;s model routing, and needs no GitHub sign-in.
+                  </span>
+                </label>
+                {draft.useForCopilot && (
+                  <label>
+                    Copilot wire API
+                    <select
+                      value={draft.wireApi ?? 'completions'}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          wireApi: e.target.value as 'completions' | 'responses'
+                        })
+                      }
+                    >
+                      <option value="completions">completions (default)</option>
+                      <option value="responses">responses (GPT-5 series)</option>
+                    </select>
+                  </label>
+                )}
                 <div className="endpoint-hint">
                   Encrypted by the system keychain. If the keychain is unavailable the key is not
                   written at all — set <code>EH_HARNESS_API_KEY</code> in the environment instead.

@@ -5,7 +5,7 @@ import { delimiter, isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
 
 import type { AgentDefinition } from '../shared/ipc'
-import { endpointEnv } from './llmEndpoints'
+import { copilotProviderEnv, endpointEnv } from './llmEndpoints'
 
 const execFileAsync = promisify(execFile)
 
@@ -298,7 +298,11 @@ export async function resolveAgent(
         ELECTRON_RUN_AS_NODE: '1',
         ...(await endpointEnv(endpointId))
       }
-    : {}
+    : // Copilot can be pointed at the same gateway through its BYOK variables,
+      // but only when an endpoint has explicitly opted in.
+      preset.id === 'copilot'
+      ? await copilotProviderEnv(endpointId)
+      : {}
 
   return {
     ...preset,

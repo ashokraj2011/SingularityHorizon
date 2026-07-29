@@ -1697,3 +1697,15 @@ textarea {
   font-family: var(--mono);
   font-size: 11px;
 }
+
+.endpoint-check {
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 8px !important;
+  line-height: 1.5;
+}
+
+.endpoint-check input {
+  margin-top: 2px;
+  flex: none;
+}
