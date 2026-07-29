@@ -215,6 +215,37 @@ how many attempts, what ends the loop, how each of the two claims is checked mec
 confirmation of an inferred effect. It does not ask which agent, which tool profile, which
 capability mode, or how long anything may run.
 
+### Changing the rules mid-run
+
+"Do not modify the database schema", said while a run is in flight, becomes three things:
+
+**A typed constraint, or a question.** An instruction the parser only half-understands comes back
+for elicitation — never narrowed to whichever reading it matched first. `"Don't touch the database"`
+is refused with both readings offered, because choosing one produces a run that obeyed something
+nobody asked for. `"Do not modify the database schema"` is not ambiguous and is not treated as such:
+specificity wins outright.
+
+**An invalidation frontier, computed as a graph query** over declared effects and the dataflow edges
+between steps. This is what `effects` being mandatory in the IR was for — without it, invalidation
+degenerates to re-running everything, which is the same as having no answer. Completed work inside
+the frontier is marked stale and re-run; completed work outside it is left alone. Artifacts stay on
+disk and evidence stays in the record, demoted a tier and tagged with the constraint that
+invalidated it — deleting it would destroy the only account of what the run did before somebody
+changed the rules.
+
+**A session policy, not a sentence in a prompt.** A constrained step is told (so it does not burn its
+budget retrying) *and* stopped: `fs/write_text_file` to a matching path is refused by the M1 gate,
+ahead of any standing grant. A constraint is not something an approval can be talked past.
+
+The honest limit: enforcement covers writes the client mediates. A shell command is opaque — the
+client sees `sh -c ...`, not the files it will touch. That is less of a hole than it sounds, because
+a step pinned to `edit` has no terminal at all, so for that step the refusal is total; a step that
+needs `verify` or `deliver` can still write through a command, and this says so rather than implying
+a guarantee it cannot make.
+
+`npm run constraint:check` injects the schema constraint mid-loop and asserts the write is refused
+through a real ACP session — remove the enforcement and the forbidden migration file appears.
+
 ## Standalone, or embedded in your own app
 
 Both, from one codebase — they are not two modes. The UI imports no Electron and no Node, and
@@ -387,6 +418,7 @@ npm run install:check      # registry config is correct and never contains a tok
 npm run gate:check         # a rude agent is stopped; symlinks cannot leave the workspace
 npm run workflow:check     # the golden path runs, is killed mid-loop, and resumes
 npm run compiler:check     # a conversation compiles to the same workflow, in <=6 questions
+npm run constraint:check   # a mid-run constraint is enforced at the gate, not in the prompt
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent

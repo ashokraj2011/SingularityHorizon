@@ -1,4 +1,5 @@
 import { AgentSession } from '../acp/session'
+import { matchGlob } from './constraints'
 import { resolveAgent } from '../agents'
 import type { MainEvent } from '../../shared/ipc'
 import type { AgentNode } from './ir'
@@ -28,8 +29,14 @@ export function acpAgentRunner(opts?: {
       const agent = await resolveAgent(node.agentId, node.toolProfile, opts?.virtualKeyFor?.(node))
       const session = new AgentSession(agent, ctx.cwd)
 
-      // Pinned before start, so nothing the agent does on connect escapes it.
-      session.setMode(node.mode, { autoGrant: true })
+      // Pinned before start, so nothing the agent does on connect escapes it —
+      // including the constraint, which is a property of the session rather
+      // than a sentence in the prompt.
+      session.setMode(node.mode, {
+        autoGrant: true,
+        forbiddenWrites: ctx.forbiddenWrites,
+        matchPath: matchGlob
+      })
 
       let text = ''
       session.on('event', (event: MainEvent) => {
@@ -55,8 +62,16 @@ export function acpAgentRunner(opts?: {
 
       try {
         await Promise.race([session.start(), timeout])
+        // The constraint goes in the prompt as well as the policy. Not because
+        // the prompt enforces anything, but because a step that is refused
+        // without being told why will keep trying and burn its budget on it.
+        const constraintText = ctx.constraints.length
+          ? '\n\nConstraints on this run (enforced by the client — attempts will be refused):\n' +
+            ctx.constraints.map((c) => `- ${c.text}`).join('\n')
+          : ''
         const prompt = [
           node.prompt,
+          constraintText,
           ...Object.entries(ctx.inputs)
             .filter(([, v]) => v)
             .map(([name, value]) => `\n\n--- ${name} ---\n${value}`)

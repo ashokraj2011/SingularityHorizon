@@ -13,6 +13,12 @@ import {
   type Signal
 } from './claims'
 import { allNodes, validate, type AgentNode, type ToolNode, type Workflow, type WorkflowNode } from './ir'
+import {
+  forbiddenWritePaths,
+  invalidationFrontier,
+  matchGlob,
+  type Constraint
+} from './constraints'
 
 /**
  * The workflow runtime.
@@ -46,6 +52,8 @@ export interface Checkpoint {
 export interface EvidenceRecord {
   id: string
   nodeId: string
+  /** Set when a constraint invalidated the work this evidence describes. */
+  staleUnder?: string
   claimClass?: string
   tier?: string
   verdict?: ClaimVerdict
@@ -80,6 +88,10 @@ export interface RunState {
   signals: Signal[]
   /** Posteriors as they stood at the end of the run, by claim class. */
   posteriors: Record<string, { alpha: number; beta: number }>
+  /** Constraints injected while the run was in flight. */
+  constraints: Constraint[]
+  /** Completed work a constraint invalidated. Kept, not deleted — see below. */
+  stale: string[]
   /** Set when the run stopped short. */
   stoppedAt?: string
   reason?: string
@@ -97,7 +109,13 @@ export interface RunState {
 export interface AgentRunner {
   run(
     node: AgentNode,
-    ctx: { cwd: string; inputs: Record<string, string>; timeoutSec: number }
+    ctx: {
+      cwd: string
+      inputs: Record<string, string>
+      timeoutSec: number
+      constraints: Constraint[]
+      forbiddenWrites: string[]
+    }
   ): Promise<{ output: string; artifactPath?: string }>
 }
 
@@ -217,8 +235,14 @@ export class WorkflowRuntime {
       evidence: [],
       approvals: [],
       signals: [],
-      posteriors: {}
+      posteriors: {},
+      constraints: [],
+      stale: []
     }
+    // Older persisted runs predate constraints; treat them as unconstrained
+    // rather than crashing on a missing field.
+    this.state.constraints = this.state.constraints ?? []
+    this.state.stale = this.state.stale ?? []
     // A resumed run starts optimistic again; the previous stop is history.
     this.state.status = 'completed'
     this.state.stoppedAt = undefined
@@ -295,7 +319,12 @@ export class WorkflowRuntime {
         const result = await this.opts.agents.run(node, {
           cwd: this.opts.cwd,
           inputs,
-          timeoutSec: node.budget.timeoutSec
+          timeoutSec: node.budget.timeoutSec,
+          // Both halves: the step is told, and the step is stopped. Telling it
+          // alone would make the constraint a suggestion addressed to the
+          // component with the least reason to honour it.
+          constraints: this.state.constraints,
+          forbiddenWrites: forbiddenWritePaths(this.state.constraints)
         })
         this.state.outputs[node.output] = result.output
         const artifact = node.artifactPath ?? result.artifactPath
@@ -482,3 +511,78 @@ export function approvalStillValid(approval: Approval, currentContent: string): 
 }
 
 export { sha256 }
+
+/**
+ * Apply a constraint to a run already in flight.
+ *
+ * Pure, and separate from `run()`, because "inject a constraint" and "resume"
+ * are two decisions a person makes at two moments — collapsing them into one
+ * call would mean a constraint could only be added by something already driving
+ * the loop.
+ *
+ * What happens to invalidated work is the part worth being careful about.
+ * Completed frontier nodes are marked stale rather than deleted: the artifacts
+ * they produced stay on disk and their evidence stays in the record, demoted a
+ * tier. Deleting it would destroy the only account of what the run did before
+ * somebody changed the rules, which is exactly what an audit needs to see.
+ * Their checkpoints are dropped so they re-run — that is what "resume from the
+ * latest checkpoint at or before the frontier" means in practice.
+ */
+export function applyConstraint(
+  workflow: Workflow,
+  state: RunState,
+  constraint: Constraint
+): { state: RunState; frontier: string[]; stale: string[]; rewoundTo: string | null } {
+  const frontier = invalidationFrontier(workflow, constraint)
+  const invalidated = new Set(frontier.all)
+
+  const next: RunState = JSON.parse(JSON.stringify(state))
+  next.constraints = [...(next.constraints ?? []), constraint]
+
+  const completed = next.checkpoints.filter((c) => invalidated.has(c.nodeId))
+  const stale = [...new Set(completed.map((c) => c.nodeId))]
+
+  // The checkpoint immediately before the earliest invalidated node — the point
+  // a resume picks up from.
+  const earliest = next.checkpoints.findIndex((c) => invalidated.has(c.nodeId))
+  const rewoundTo = earliest > 0 ? next.checkpoints[earliest - 1].nodeId : null
+
+  next.checkpoints = next.checkpoints.filter((c) => !invalidated.has(c.nodeId))
+  next.stale = [...new Set([...(next.stale ?? []), ...stale])]
+
+  // Evidence survives, demoted: it was true when it was captured, and it was
+  // captured under rules that no longer hold.
+  next.evidence = next.evidence.map((e) =>
+    invalidated.has(e.nodeId) ? { ...e, tier: demote(e.tier), staleUnder: constraint.id } : e
+  )
+
+  // Signals produced by invalidated steps must not satisfy a claim on the next
+  // pass — they describe work that is being redone.
+  const invalidatedOutputs = new Set(
+    allNodes(workflow)
+      .filter((n) => invalidated.has(n.id))
+      .flatMap((n) => n.effects.emits ?? [])
+  )
+  next.signals = next.signals.filter((s) => !invalidatedOutputs.has(s.name))
+
+  next.status = 'completed'
+  next.stoppedAt = undefined
+  next.reason = undefined
+
+  return { state: next, frontier: frontier.all, stale, rewoundTo }
+}
+
+/** One step down the evidence ladder. PRODUCTION evidence gathered under rules
+ *  that have since changed is no longer production evidence. */
+function demote(tier: string | undefined): string {
+  switch (tier) {
+    case 'PRODUCTION':
+      return 'STAGING'
+    case 'STAGING':
+      return 'EXPERIMENT'
+    default:
+      return 'SYNTHETIC'
+  }
+}
+
+export { matchGlob }

@@ -553,13 +553,20 @@ export class AgentSession extends EventEmitter {
    */
   setMode(
     mode: SessionMode,
-    opts?: { autoGrant?: boolean; commandAllowList?: string[] }
+    opts?: {
+      autoGrant?: boolean
+      commandAllowList?: string[]
+      forbiddenWrites?: string[]
+      matchPath?: (pattern: string, path: string) => boolean
+    }
   ): void {
     this.unattended = opts?.autoGrant === true
     this.policy = {
       mode,
       grants: opts?.autoGrant ? allowAllGrants(mode) : [],
-      commandAllowList: opts?.commandAllowList
+      commandAllowList: opts?.commandAllowList,
+      forbiddenWrites: opts?.forbiddenWrites,
+      matchPath: opts?.matchPath
     }
   }
 

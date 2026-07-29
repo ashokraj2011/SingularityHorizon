@@ -102,6 +102,15 @@ export interface SessionPolicy {
    * grant exists. Absent means "no command allow-list" — the interactive case.
    */
   commandAllowList?: string[]
+  /**
+   * Glob patterns this session may not write, from a constraint injected into
+   * the run. Checked before grants: a constraint is not something an approval
+   * can be talked past, which is the difference between enforcing it and
+   * mentioning it in a prompt.
+   */
+  forbiddenWrites?: string[]
+  /** Matcher, injected so this module stays free of glob logic. */
+  matchPath?: (pattern: string, path: string) => boolean
 }
 
 export function defaultPolicy(): SessionPolicy {
@@ -127,6 +136,8 @@ export interface ClassifiedCall {
   toolClass: ToolClass
   /** Terminal only: the command line, for allow-list and grant matching. */
   command?: string
+  /** Filesystem calls only: the path, for constraint matching. */
+  path?: string
   /** What the permission card shows if one has to be synthesized. */
   title: string
 }
@@ -162,9 +173,9 @@ export function classify(method: string, params: unknown): ClassifiedCall | null
   const p = (params ?? {}) as Record<string, unknown>
   switch (method) {
     case 'fs/read_text_file':
-      return { toolClass: 'fs.read', title: `Read ${String(p.path ?? '')}` }
+      return { toolClass: 'fs.read', path: String(p.path ?? ''), title: `Read ${String(p.path ?? '')}` }
     case 'fs/write_text_file':
-      return { toolClass: 'fs.write', title: `Write ${String(p.path ?? '')}` }
+      return { toolClass: 'fs.write', path: String(p.path ?? ''), title: `Write ${String(p.path ?? '')}` }
     case 'terminal/create': {
       const command = unwrapShell(String(p.command ?? ''), (p.args as string[] | undefined) ?? [])
       return { toolClass: 'terminal', command, title: command || 'Run a command' }
@@ -225,6 +236,24 @@ export function decide(
   call: ClassifiedCall,
   now: number = Date.now()
 ): Decision {
+  // Constraints outrank everything, including a standing grant. A step told
+  // not to touch the schema and then granted blanket permission by a workflow
+  // has still been told not to touch the schema.
+  if (
+    call.toolClass === 'fs.write' &&
+    policy.forbiddenWrites?.length &&
+    call.path &&
+    policy.matchPath
+  ) {
+    const hit = policy.forbiddenWrites.find((p) => policy.matchPath!(p, call.path!))
+    if (hit) {
+      return {
+        kind: 'deny',
+        reason: `A constraint on this run forbids writing ${call.path} (matches ${hit}).`
+      }
+    }
+  }
+
   if (!modeAllows(policy.mode, call.toolClass)) {
     return {
       kind: 'deny',
