@@ -584,24 +584,36 @@ export class AgentSession extends EventEmitter {
    * the agent cooperating.
    */
   private async enforce(call: ClassifiedCall): Promise<void> {
-    // An approval the agent itself collected covers the call that follows it.
-    // Match on the command when we can. When we cannot — the agent described
-    // the action in its own words and there is no reliable identifier tying the
-    // request to the call — fall back to the oldest outstanding approval of the
-    // same class. ACP gives no correlation id here, and the alternative is
-    // carding every well-behaved agent twice for one action.
-    const exact = this.pendingApprovals.findIndex(
-      (a) => a.toolClass === call.toolClass && a.command === call.command
-    )
-    const approved =
-      exact !== -1 ? exact : this.pendingApprovals.findIndex((a) => a.toolClass === call.toolClass)
-    if (approved !== -1) {
-      this.pendingApprovals.splice(approved, 1)
-      return
-    }
-
+    // The lattice is consulted first, and an approval cannot reach past it.
+    //
+    // This used to check for a prior approval before deciding, which quietly
+    // made the mode ceiling optional: an agent that asked, and was approved,
+    // could then do something its mode forbade. The lattice tests never caught
+    // it because they exercised decide() directly and never went through the
+    // approval path — the one route real agents actually take.
     const decision = decide(this.policy, call)
+
     if (decision.kind === 'allow') return
+
+    if (decision.kind === 'ask') {
+      // An approval the agent itself collected covers the call that follows it.
+      // Match on the command when we can. When we cannot — the agent described
+      // the action in its own words and there is no reliable identifier tying
+      // the request to the call — fall back to the oldest outstanding approval
+      // of the same class. ACP gives no correlation id here, and the
+      // alternative is carding every well-behaved agent twice for one action.
+      const exact = this.pendingApprovals.findIndex(
+        (a) => a.toolClass === call.toolClass && a.command === call.command
+      )
+      const approved =
+        exact !== -1
+          ? exact
+          : this.pendingApprovals.findIndex((a) => a.toolClass === call.toolClass)
+      if (approved !== -1) {
+        this.pendingApprovals.splice(approved, 1)
+        return
+      }
+    }
 
     if (decision.kind === 'deny') {
       this.pushBlock({ kind: 'notice', level: 'error', text: decision.reason })
@@ -674,6 +686,29 @@ export class AgentSession extends EventEmitter {
       options
     }
 
+    // A call the mode forbids is refused rather than carded, in either mode.
+    // Offering an approval that cannot take effect teaches people that approval
+    // is decorative, and the refusal has to read the same whether or not
+    // somebody was there to click.
+    const classified: ClassifiedCall = {
+      toolClass: req.toolCall?.kind === 'execute' ? 'terminal' : 'fs.write',
+      command:
+        typeof req.toolCall?.rawInput?.command === 'string'
+          ? req.toolCall.rawInput.command
+          : undefined,
+      title: req.toolCall?.title ?? ''
+    }
+    const upfront = decide(this.policy, classified)
+    if (upfront.kind === 'deny') {
+      this.pushBlock({ kind: 'notice', level: 'error', text: upfront.reason })
+      const denyOption = options.find((o) => o.kind === 'reject_once')
+      return Promise.resolve(
+        denyOption
+          ? { outcome: { outcome: 'selected' as const, optionId: denyOption.optionId } }
+          : { outcome: { outcome: 'cancelled' as const } }
+      )
+    }
+
     // Unattended: answer from policy. The approval already happened — a human
     // approved the workflow that pinned this step's mode — so parking the call
     // on a card would stall the run waiting for a person who is not there. The
@@ -681,15 +716,8 @@ export class AgentSession extends EventEmitter {
     // into something its mode forbids, and the answered card stays in the
     // transcript so the receipt records what was allowed and on what basis.
     if (this.unattended) {
-      const call: ClassifiedCall = {
-        toolClass: req.toolCall?.kind === 'execute' ? 'terminal' : 'fs.write',
-        command:
-          typeof req.toolCall?.rawInput?.command === 'string'
-            ? req.toolCall.rawInput.command
-            : undefined,
-        title: req.toolCall?.title ?? ''
-      }
-      const decision = decide(this.policy, call)
+      const call = classified
+      const decision = upfront
       const allow = options.find((o) => o.kind === 'allow_once') ?? options[0]
       const deny = options.find((o) => o.kind === 'reject_once')
       const chosen = decision.kind === 'allow' ? allow : deny

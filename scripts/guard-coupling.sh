@@ -74,7 +74,11 @@ fi
 missing=$(node -e '
 const s = require("./package.json").scripts;
 process.stdout.write(Object.entries(s)
-  .filter(([, v]) => v.includes("esbuild") && v.includes("--format=esm") && !v.includes("--external:typescript"))
+  // Only the harnesses under scripts/: those bundle source that reaches the
+  // TypeScript compiler through the AST index. A build of src/ that never
+  // imports it does not need the flag, and demanding one anyway would teach
+  // people to add flags they cannot explain.
+  .filter(([, v]) => v.includes("esbuild scripts/") && v.includes("--format=esm") && !v.includes("--external:typescript"))
   .map(([k]) => k).join(", "));
 ')
 if [ -n "$missing" ]; then

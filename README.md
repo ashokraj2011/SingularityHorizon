@@ -107,6 +107,31 @@ Every field is optional; an absent or malformed file means unrestricted. It **fa
 
 Enforcement lives in the main process. The UI reads policy too, but only so a locked control can say *why* it is unavailable instead of presenting a dead button — a policy the renderer merely hides is not a policy, since the renderer is the part an end user can most easily talk around. Refusals surface as a sentence in the transcript: *Model "claude-opus-5" is not permitted by policy.*
 
+## Its own harness, and a plain chat window
+
+Event Horizon is the ACP surface, so it ships its own agent rather than only driving other people's.
+Two presets need nothing installed:
+
+- **Event Horizon (direct)** — a coding harness: read, write, and shell, looping until the model is
+  done.
+- **Chat (no tools)** — the same harness with no tools *offered*. Not "asked not to use tools":
+  given none, so it cannot reach the machine even if it decides it would like to.
+
+Both talk to any chat-completions endpoint — OpenAI-compatible (what a LiteLLM gateway fronts for
+every model it proxies) or Anthropic Messages — over plain `fetch`, with no SDK dependency. Point
+`EH_HARNESS_BASE_URL` at a gateway and every model behind it becomes either a coding agent or a chat
+window.
+
+**The harness is written as a real ACP agent, not as a special case inside the app.** That is the
+whole design: the transcript, tool cards, permission gate, workflow runtime, persistence and audit
+export already work against ACP, so none of them needs a second code path — and the gate applies to
+Event Horizon's own agent exactly as it applies to a third party's.
+
+Which means the harness process **never touches the filesystem and never spawns a shell**. Every
+tool is a call back to the client, so workspace containment, the capability lattice and any injected
+constraint all hold. `npm run harness:check` asserts this directly: pinned to `explore`, the
+harness's write is refused and the file is unchanged.
+
 ## The gate is enforced by this client, not by the agent
 
 ACP asks agents to call `session/request_permission` before doing anything
@@ -442,6 +467,7 @@ npm run gate:check         # a rude agent is stopped; symlinks cannot leave the 
 npm run workflow:check     # the golden path runs, is killed mid-loop, and resumes
 npm run compiler:check     # a conversation compiles to the same workflow, in <=6 questions
 npm run constraint:check   # a mid-run constraint is enforced at the gate, not in the prompt
+npm run harness:check      # the built-in harness streams, loops, and is gated like any agent
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent

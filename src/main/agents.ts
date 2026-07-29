@@ -142,7 +142,55 @@ export const DEFAULT_TOOL_PROFILE = 'full'
  * Built-in agent presets. ACP is agent-agnostic, so anything that speaks it
  * over stdio works here — Copilot is just the default.
  */
+/**
+ * Where the bundled harness lives.
+ *
+ * Resolved rather than assumed: `out/harness/index.mjs` next to the built main
+ * process in production, and the same path from the repo root in dev. Getting
+ * this wrong shows up as "agent not found" for the one agent that is always
+ * installed, so both are tried.
+ */
+export function harnessEntry(): string {
+  // `__dirname` exists in the CommonJS main-process bundle and not in an ESM
+  // one, and `typeof` on an undeclared identifier is the one way to ask without
+  // throwing in either. A headless harness bundling this module would otherwise
+  // fail at import rather than at use.
+  const here = typeof __dirname === 'string' ? __dirname : null
+  const candidates = [
+    ...(here ? [join(here, '..', 'harness', 'index.mjs')] : []),
+    join(process.cwd(), 'out', 'harness', 'index.mjs')
+  ]
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.R_OK)
+      return candidate
+    } catch {
+      /* try the next one */
+    }
+  }
+  return candidates[1]
+}
+
 export const BUILTIN_AGENTS: AgentDefinition[] = [
+  {
+    // Event Horizon's own harness. No CLI to install, and it speaks ACP like
+    // everything else — so the gate, the transcript and the workflow runtime
+    // treat it exactly as they treat a third party's agent.
+    id: 'built-in',
+    name: 'Event Horizon (direct)',
+    command: process.execPath,
+    args: [],
+    permissionModel: 'protocol'
+  },
+  {
+    // The same harness with no tools offered: a plain chat window over any
+    // chat-completions endpoint, unable to reach the machine at all.
+    id: 'chat',
+    name: 'Chat (no tools)',
+    command: process.execPath,
+    args: [],
+    permissionModel: 'protocol'
+  },
   {
     id: 'copilot',
     name: 'GitHub Copilot CLI',
@@ -192,6 +240,8 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
 
 /** First of the agent's candidate binaries that exists on PATH. */
 async function whichAny(agent: AgentDefinition): Promise<string | null> {
+  // The bundled harness ships with the app; there is nothing to look for.
+  if (agent.id === 'built-in' || agent.id === 'chat') return agent.command
   for (const candidate of [agent.command, ...(agent.altCommands ?? [])]) {
     const found = await which(candidate)
     if (found) return found
@@ -230,12 +280,20 @@ export async function resolveAgent(
   const extraArgs =
     preset.id === 'copilot' && profile ? profile.extraArgs : []
 
+  // The harness takes its entry point and its mode from us, not from a flag
+  // the user could be expected to remember.
+  const builtIn = preset.id === 'built-in' || preset.id === 'chat'
+  const harnessArgs = builtIn ? [harnessEntry()] : []
+  const harnessEnv: Record<string, string> = builtIn
+    ? { EH_HARNESS_MODE: preset.id === 'chat' ? 'chat' : 'code' }
+    : {}
+
   return {
     ...preset,
     command: bin,
-    args: [...preset.args, ...extraArgs],
+    args: [...harnessArgs, ...preset.args, ...extraArgs],
     toolProfile: profile?.id ?? DEFAULT_TOOL_PROFILE,
-    env: { ...preset.env, PATH: await resolvedPath(), ...gatewayEnv(virtualKey) }
+    env: { ...preset.env, PATH: await resolvedPath(), ...gatewayEnv(virtualKey), ...harnessEnv }
   }
 }
 
