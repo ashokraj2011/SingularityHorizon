@@ -297,6 +297,11 @@ export interface RepoInfo {
 export interface WorkThread {
   id: string
   title: string
+  /**
+   * The Capability this thread is delivered under. Binds at creation and does
+   * not move: policy, budgets and evidence all hang off it.
+   */
+  capabilityId?: string
   /** Whatever the provider calls the current stage. Opaque to core. */
   phase?: string
   status?: 'active' | 'awaiting-approval' | 'blocked' | 'done'

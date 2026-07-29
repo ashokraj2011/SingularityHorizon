@@ -56,7 +56,7 @@ fi
 # real agent. Anything it imports transitively must therefore avoid electron —
 # an import there fails at load, turning every such suite red at once.
 hits=$(grep -rn "from 'electron'" \
-  src/main/acp src/main/store src/main/ast src/main/workflow src/shared \
+  src/main/acp src/main/store src/main/ast src/main/workflow src/main/capability src/shared \
   --include='*.ts' || true)
 if [ -n "$hits" ]; then
   echo "✗ a module used by the headless harnesses imports electron:"; echo "$hits"; fail=1

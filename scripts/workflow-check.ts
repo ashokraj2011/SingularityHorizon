@@ -221,6 +221,7 @@ const state = await runtime.run(goldenPath(), {
   agents,
   gates,
   store,
+  capability: { id: 'payments.retry-engine', path: 'payments / payments.retry-engine' },
   onEvent: (e) => events.push(e)
 })
 
@@ -252,6 +253,15 @@ ok('a failing exit code was recorded before the fix',
 ok('both claim classes were scored',
    new Set(state.evidence.filter((e) => e.claimClass).map((e) => e.claimClass)).size === 2)
 ok('the PR step ran last', state.checkpoints.at(-1)?.nodeId === 'open-pr')
+
+// Evidence is stamped with the capability it was gathered under, and with the
+// path as it stood at that moment. Hierarchical calibration pools posteriors
+// down the path, so re-deriving it later would attribute old evidence to a
+// subtree it never came from.
+ok('evidence carries the capability it was gathered under',
+   state.evidence.every((e) => e.capabilityId === 'payments.retry-engine'))
+ok('and the path denormalized at write time',
+   state.evidence.every((e) => e.capabilityPath?.startsWith('payments /')))
 
 // A governed step has no human at the keyboard, so an agent that politely asks
 // must be answered from the standing grant — otherwise the run deadlocks at the

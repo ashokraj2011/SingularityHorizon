@@ -52,6 +52,17 @@ export interface Checkpoint {
 export interface EvidenceRecord {
   id: string
   nodeId: string
+  /**
+   * The Capability this evidence was gathered under, and its path at that
+   * moment.
+   *
+   * The path is denormalized on purpose. It is derivable today and will not be
+   * after a re-parenting, and hierarchical calibration pools posteriors down the
+   * path — so recomputing it later would silently attribute old evidence to a
+   * subtree it never came from. Two fields now instead of a migration later.
+   */
+  capabilityId?: string
+  capabilityPath?: string
   /** Set when a constraint invalidated the work this evidence describes. */
   staleUnder?: string
   claimClass?: string
@@ -156,6 +167,8 @@ export interface RunOptions {
   store?: CheckpointStore
   /** Stop before this node id. Used to prove a killed run resumes. */
   stopBefore?: string
+  /** Stamped onto every evidence record this run writes. */
+  capability?: { id: string; path: string }
   onEvent?: (event: { type: string; nodeId?: string; detail?: unknown }) => void
 }
 
@@ -346,7 +359,8 @@ export class WorkflowRuntime {
           id: `ev-${++evidenceSeq}`,
           nodeId: node.id,
           signal,
-          at: Date.now()
+          at: Date.now(),
+          ...this.capabilityStamp()
         }
         this.state.evidence.push(record)
         evidenceIds.push(record.id)
@@ -476,9 +490,16 @@ export class WorkflowRuntime {
       claimClass: claim.claimClass,
       tier: claim.evidenceTier,
       verdict,
-      at: Date.now()
+      at: Date.now(),
+      ...this.capabilityStamp()
     })
     return verdict
+  }
+
+  /** Empty when no capability was supplied, rather than a placeholder id. */
+  private capabilityStamp(): { capabilityId?: string; capabilityPath?: string } {
+    const capability = this.opts.capability
+    return capability ? { capabilityId: capability.id, capabilityPath: capability.path } : {}
   }
 
   private async hashArtifact(name: string, path: string): Promise<void> {

@@ -221,6 +221,39 @@ agent without per-agent configuration. A per-session key can be passed in, so sp
 the session rather than to one shared credential. Standing the proxy up is an operational task —
 this is the seam, not the server.
 
+## Capabilities
+
+A Capability is a node in an ownership tree that governs how software is delivered within its scope.
+Business nodes are interior — governance and rollup. Delivery nodes own repos and do work. It governs
+delivery; it is not an EA modelling tool.
+
+Two structural facts carry the weight. **Ownership is a tree, usage is a graph:** a repo has exactly
+one owning capability, always, and a shared thing gets one owner plus consumer edges from everyone
+else. And **`id` is path-like by convention while `parent` is authoritative** — so renames and
+re-parenting do not break history, because events store the id and never the path. Everything that
+needs ancestry re-derives it.
+
+**Policy resolution is a fold, not a search.** Over the root→node path: gates and constraints union,
+budgets take the elementwise minimum, allow-lists intersect. Each operation is chosen so a child can
+only tighten, and there is no override syntax anywhere in the schema — *that absence is the
+enforcement*. Nothing has to check for an escape because none is representable. It is the vertical
+twin of the capability lattice: the lattice bounds what a session may reach, this bounds what a
+subtree may permit.
+
+Resolution happens host-side. What crosses into the session layer is a flat `SessionPolicy` the M1
+gate already enforces, plus a capability id for stamping — nothing below that line knows a tree
+exists.
+
+`npm run capability:check` (83 assertions) targets the correctness risk rather than coverage: single
+ownership checked across the whole forest, since the failure is invisible from inside either
+claimant; monotonicity asserted as a property over *every* node, because a child that can end up
+looser means one of the four fold operations is wrong; and every ancestry answer checked against a
+forest where the ids and the parent links deliberately disagree.
+
+Components are claims kept honest by observation. A reference to a `proposed` one **elicits rather
+than fails** — reporting it as an error would push people to confirm components purely to quiet the
+validator, which is how a governance record becomes fiction.
+
 ## Governed workflows
 
 A workflow is an IR, not a script: five node types, each carrying its own capability mode, tool
