@@ -186,6 +186,35 @@ real ACP sessions — analyse → hash-bound gate → implement → verify loop 
 stub — then kills it mid-loop and resumes. The model is the only thing stubbed; a live one would
 make "resumed without re-running" an assertion about luck.
 
+### Compiling a workflow from a conversation
+
+The compiler is not a translator. It works out what a conversation failed to settle and closes each
+hole by exactly one of three routes — a versioned org playbook, a lookup against what is already
+known about the repository, or a question to a person. Questions come last and are counted: a
+compiler that asks which tool profile to use has spent the user's attention before reaching the
+question that needed them.
+
+**Holes are derived from the schema, never self-reported.** An extraction pass that failed to notice
+a field would leave it out of its own hole list with equal confidence, so asking the model what it
+missed inherits the miss. A `PartialWorkflow` is a distinct type from `Workflow`, and the only path
+between them checks that nothing is open — a half-bound draft is unrepresentable at the point of
+execution rather than merely rejected there.
+
+An *inferred* value is not a bound one. A step whose writes were guessed from the conversation is
+`PARTIAL`, not filled in: an unconfirmed guess about what a step writes is exactly the input a
+mid-run constraint would silently get wrong.
+
+The plan view is derived on every read and never stored. Edits are expressed against IR paths and
+revalidated; fields the plan renders as derived are refused rather than styled as read-only.
+
+`npm run compiler:check` compiles the golden-path conversation and scores it against the
+hand-written M3 workflow. Differences are classified, because they are not comparable — reworded
+prompts are the same workflow, differing timeouts permit the same actions, differing capability
+modes do not. **Capability differences must be zero, and are.** It asks 6 questions: who approves,
+how many attempts, what ends the loop, how each of the two claims is checked mechanically, and one
+confirmation of an inferred effect. It does not ask which agent, which tool profile, which
+capability mode, or how long anything may run.
+
 ## Standalone, or embedded in your own app
 
 Both, from one codebase — they are not two modes. The UI imports no Electron and no Node, and
@@ -357,6 +386,7 @@ npm run smoke              # one real prompt turn, end to end
 npm run install:check      # registry config is correct and never contains a token
 npm run gate:check         # a rude agent is stopped; symlinks cannot leave the workspace
 npm run workflow:check     # the golden path runs, is killed mid-loop, and resumes
+npm run compiler:check     # a conversation compiles to the same workflow, in <=6 questions
 npm run skills:check [cwd] # skill discovery, precedence, expansion
 npm run context:check      # /context and /usage parsers (offline)
 npm run attach:check       # attachments reach the model; silent commands stay silent
