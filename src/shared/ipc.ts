@@ -526,6 +526,9 @@ export interface AcpStudioApi {
   /** Policy in force for a working directory (omit for the global default). */
   getAdminPolicy(workingDir?: string): Promise<AdminPolicy>
 
+  /** Records the theme in effect, so the next launch fills the window to match. */
+  rememberTheme(theme: 'dark' | 'light'): Promise<void>
+
   listEndpoints(): Promise<LlmEndpoint[]>
   saveEndpoint(input: LlmEndpointInput): Promise<{ endpoint: LlmEndpoint; warning?: string }>
   deleteEndpoint(id: string): Promise<void>

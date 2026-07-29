@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
 import type { Dirent } from 'node:fs'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -17,7 +17,7 @@ import { extractSymbol } from './ast/outline'
 import { statPaths } from './attachments'
 import { loadProvidersFromEnv } from './providers/load'
 import { registeredProviders } from './providers/registry'
-import { preferredToolProfile, rememberToolProfile } from './prefs'
+import { lastThemeSync, preferredToolProfile, rememberTheme, rememberToolProfile } from './prefs'
 import { renderAuditMarkdown, suggestedFilename } from './auditReport'
 import {
   agentAllowed,
@@ -78,7 +78,14 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    backgroundColor: '#12100f',
+    // Matched to the theme the renderer is about to resolve, so there is no
+    // flash on the one frame CSS cannot reach. The last resolved theme beats the
+    // OS setting, because an explicit light choice on a dark system is exactly
+    // the case a nativeTheme check gets wrong.
+    backgroundColor:
+      (lastThemeSync() ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light')) === 'dark'
+        ? '#111113'
+        : '#ffffff',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -200,6 +207,7 @@ handle('agents:list', async () => {
   return (await availableAgents()).filter((a) => agentAllowed(policy, a.id))
 })
 handle('adminPolicy:get', (workingDir?: string) => loadPolicy(workingDir))
+handle('theme:remember', (theme: 'dark' | 'light') => rememberTheme(theme))
 handle('llm:list', () => listEndpoints())
 handle('llm:save', (input) => saveEndpoint(input))
 handle('llm:delete', (id: string) => deleteEndpoint(id))

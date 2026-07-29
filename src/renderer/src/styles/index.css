@@ -1,23 +1,99 @@
+/**
+ * Theme tokens.
+ *
+ * Both themes are defined here and `data-theme` on <html> selects one, resolved
+ * in the renderer from the user's preference and the OS setting. Doing the
+ * resolution in script rather than in a `prefers-color-scheme` block means
+ * there is exactly one source of truth for which theme is active — a media
+ * query plus an override selector has to agree with itself, and when it does
+ * not the UI ends up half-light.
+ *
+ * Every tint is derived with `color-mix` from a semantic colour rather than
+ * written as a literal rgba. A hard-coded `rgba(107, 163, 104, 0.08)` is a dark
+ * theme decision hiding inside a component, and it is why a light theme is
+ * usually a rewrite instead of a palette.
+ */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #111113;
+  --bg-raised: #1a1a1d;
+  --bg-inset: #0c0c0e;
+  --bg-hover: #232327;
+  --border: #26262b;
+  --border-strong: #36363c;
+
+  --text: #e9e9ec;
+  --text-dim: #9a9aa3;
+  --text-faint: #6a6a73;
+
+  --accent: #34a06f;
+  --accent-hover: #3cb47d;
+  --accent-dim: #1f6244;
+  /* Text on an accent fill. Not --bg: the accent is not always dark enough. */
+  --on-accent: #07130d;
+
+  --green: #4ea87a;
+  --red: #d3675f;
+  --yellow: #cfa14b;
+  --blue: #5f92cf;
+  --violet: #a883c9;
+  --teal: #5aa89b;
+
+  --scrollbar: #3a3a40;
+  --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.48);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.58);
+  --scrim: rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --bg-raised: #f7f7f8;
+  --bg-inset: #f1f1f3;
+  --bg-hover: #ececef;
+  --border: #e3e3e7;
+  --border-strong: #cdcdd4;
+
+  --text: #17171a;
+  --text-dim: #56565f;
+  --text-faint: #85858f;
+
+  --accent: #16855a;
+  --accent-hover: #12744e;
+  --accent-dim: #a7d8c1;
+  --on-accent: #ffffff;
+
+  /* Pulled darker: the same hues at dark-theme lightness fail on white. */
+  --green: #197a4f;
+  --red: #b8332b;
+  --yellow: #8a6410;
+  --blue: #2c5f9e;
+  --violet: #7a4d9c;
+  --teal: #2b7d70;
+
+  --scrollbar: #c8c8d0;
+  --shadow-sm: 0 4px 14px rgba(16, 16, 20, 0.08);
+  --shadow-md: 0 10px 28px rgba(16, 16, 20, 0.12);
+  --shadow-lg: 0 20px 48px rgba(16, 16, 20, 0.16);
+  --scrim: rgba(24, 24, 28, 0.28);
+}
+
 :root {
-  /* Warm, low-glare dark palette — long sessions are the normal case here. */
-  --bg: #12100f;
-  --bg-raised: #1a1817;
-  --bg-inset: #0d0c0b;
-  --bg-hover: #232120;
-  --border: #2e2b29;
-  --border-strong: #3d3a37;
-  --text: #ece7e2;
-  --text-dim: #a39c95;
-  --text-faint: #6f6862;
-  --accent: #d97757;
-  --accent-dim: #8a4a34;
-  --green: #6ba368;
-  --red: #d16a63;
-  --yellow: #d4a24e;
-  --blue: #6a9bd1;
   --radius: 8px;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+/* A tint of a semantic colour, so it follows the theme rather than fighting it. */
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  /* Older engines fall back to the flat raised surface rather than no surface. */
+  .tinted {
+    background: var(--bg-raised);
+  }
 }
 
 * {
@@ -66,7 +142,7 @@ textarea {
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4d4945;
+  background: var(--scrollbar);
   background-clip: content-box;
 }
 ::-webkit-scrollbar-track {
@@ -118,8 +194,8 @@ textarea {
   border-radius: 50%;
   background:
     radial-gradient(circle at 50% 50%, var(--bg-inset) 0 34%, transparent 35%),
-    conic-gradient(from 210deg, var(--accent), #b9603f 40%, var(--accent-dim) 62%, var(--accent));
-  box-shadow: 0 0 10px rgba(217, 119, 87, 0.28);
+    conic-gradient(from 210deg, var(--accent), var(--accent-hover) 40%, var(--accent-dim) 62%, var(--accent));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .brand-name {
@@ -260,14 +336,14 @@ textarea {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #1a0f0a;
+  color: var(--on-accent);
   font-weight: 500;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #e0855f;
-  border-color: #e0855f;
-  color: #1a0f0a;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--on-accent);
 }
 
 .btn.wide {
@@ -287,7 +363,7 @@ textarea {
 }
 
 .btn.allow-all:hover:not(:disabled) {
-  background: rgba(212, 162, 78, 0.12);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
   border-color: var(--yellow);
   color: var(--yellow);
 }
@@ -302,7 +378,7 @@ textarea {
 }
 
 .pill.toggle.on {
-  background: rgba(212, 162, 78, 0.16);
+  background: color-mix(in srgb, var(--yellow) 16%, transparent);
   border-color: var(--yellow);
   color: var(--yellow);
 }
@@ -433,7 +509,7 @@ textarea {
   background: var(--bg-raised);
   color: var(--text-dim);
   font-size: 12px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-sm);
   z-index: 5;
 }
 
@@ -443,9 +519,9 @@ textarea {
 }
 
 .session-grounding {
-  border: 1px solid rgba(107, 163, 104, 0.42);
+  border: 1px solid color-mix(in srgb, var(--green) 42%, transparent);
   border-radius: 10px;
-  background: rgba(107, 163, 104, 0.08);
+  background: color-mix(in srgb, var(--green) 8%, transparent);
   color: var(--text-dim);
   padding: 10px 12px;
 }
@@ -513,7 +589,7 @@ textarea {
 }
 
 .grounding-kind.instructions {
-  border-color: rgba(107, 163, 104, 0.55);
+  border-color: color-mix(in srgb, var(--green) 55%, transparent);
   color: var(--green);
 }
 
@@ -575,7 +651,7 @@ textarea {
 .notice.error {
   border-color: var(--accent-dim);
   color: var(--red);
-  background: rgba(209, 106, 99, 0.08);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
 }
 
 /* ------------------------------------------------------------- tool cards */
@@ -703,16 +779,16 @@ textarea {
 }
 
 .diff-row.add {
-  background: rgba(107, 163, 104, 0.13);
+  background: color-mix(in srgb, var(--green) 13%, transparent);
 }
 .diff-row.add .txt {
-  color: #9ed09b;
+  color: var(--green);
 }
 .diff-row.del {
-  background: rgba(209, 106, 99, 0.12);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 .diff-row.del .txt {
-  color: #e39b96;
+  color: var(--red);
 }
 .diff-row.gap {
   color: var(--text-faint);
@@ -725,7 +801,7 @@ textarea {
 .perm {
   border: 1px solid var(--accent-dim);
   border-radius: var(--radius);
-  background: rgba(217, 119, 87, 0.06);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
   overflow: hidden;
 }
 
@@ -871,7 +947,7 @@ textarea {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
   padding: 5px;
   z-index: 20;
 }
@@ -973,7 +1049,7 @@ textarea {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-md);
   padding: 5px;
   z-index: 40;
 }
@@ -1125,7 +1201,7 @@ textarea {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1143,7 +1219,7 @@ textarea {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
@@ -1202,15 +1278,15 @@ textarea {
 /* Distinct hues per slice so the bar and the table read as one figure. */
 .seg.system-prompt,
 .swatch.system-prompt {
-  background: #6a9bd1;
+  background: var(--blue);
 }
 .seg.system-tools,
 .swatch.system-tools {
-  background: #7fb2a6;
+  background: var(--teal);
 }
 .seg.mcp-tools,
 .swatch.mcp-tools {
-  background: #b58cc4;
+  background: var(--violet);
 }
 .seg.messages,
 .swatch.messages {
@@ -1218,11 +1294,11 @@ textarea {
 }
 .seg.free-space,
 .swatch.free-space {
-  background: #2e2b29;
+  background: var(--border);
 }
 .seg.buffer,
 .swatch.buffer {
-  background: #3d3a37;
+  background: var(--border-strong);
 }
 
 .swatch {
@@ -1441,7 +1517,7 @@ textarea {
 .chip-mode.on {
   color: var(--blue);
   border-color: var(--blue);
-  background: rgba(106, 155, 209, 0.12);
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
 }
 
 /* Earlier-session rows carry a second line of context. */
@@ -1538,15 +1614,15 @@ textarea {
 
 .decision.yes {
   color: var(--green);
-  border-color: rgba(107, 163, 104, 0.5);
+  border-color: color-mix(in srgb, var(--green) 50%, transparent);
 }
 .decision.always {
   color: var(--yellow);
-  border-color: rgba(212, 162, 78, 0.5);
+  border-color: color-mix(in srgb, var(--yellow) 50%, transparent);
 }
 .decision.no {
   color: var(--red);
-  border-color: rgba(209, 106, 99, 0.5);
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
 }
 
 /* A running command is doing something; a static "PENDING" reads as stuck. */
@@ -1574,7 +1650,7 @@ textarea {
   font-family: var(--mono);
   font-size: 10.5px;
   color: var(--yellow);
-  border: 1px solid rgba(212, 162, 78, 0.45);
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
   border-radius: 999px;
   padding: 0 6px;
 }
@@ -1595,7 +1671,7 @@ textarea {
   font-weight: 500;
   letter-spacing: 0.02em;
   color: var(--yellow);
-  border: 1px solid rgba(212, 162, 78, 0.45);
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
   border-radius: 999px;
   padding: 1px 7px;
   vertical-align: middle;
@@ -1636,7 +1712,7 @@ textarea {
 
 .endpoint-tag.warn {
   color: var(--yellow);
-  border-color: rgba(212, 162, 78, 0.45);
+  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
 }
 
 .endpoint-url,
@@ -1708,4 +1784,67 @@ textarea {
 .endpoint-check input {
   margin-top: 2px;
   flex: none;
+}
+
+/* --- appearance control -------------------------------------------------- */
+
+.drop-theme {
+  display: flex;
+  gap: 4px;
+  padding: 4px 10px 7px;
+}
+
+.drop-theme-btn {
+  flex: 1;
+  font-size: 11.5px;
+  padding: 5px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: var(--bg-inset);
+}
+
+.drop-theme-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.drop-theme-btn.on {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.theme-toggle {
+  display: flex;
+  gap: 3px;
+  padding: 2px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.theme-btn {
+  flex: 1;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  padding: 4px 0;
+  border-radius: 5px;
+  color: var(--text-faint);
+}
+
+.theme-btn:hover {
+  color: var(--text);
+}
+
+.theme-btn.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }

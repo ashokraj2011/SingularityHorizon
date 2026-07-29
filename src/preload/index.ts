@@ -18,6 +18,7 @@ const api: AcpStudioApi = {
   forgetSession: (id) => ipcRenderer.invoke('sessions:forget', id),
   usageSummary: () => ipcRenderer.invoke('sessions:usageSummary'),
   getAdminPolicy: (workingDir) => ipcRenderer.invoke('adminPolicy:get', workingDir),
+  rememberTheme: (theme) => ipcRenderer.invoke('theme:remember', theme),
   listEndpoints: () => ipcRenderer.invoke('llm:list'),
   saveEndpoint: (input) => ipcRenderer.invoke('llm:save', input),
   deleteEndpoint: (id) => ipcRenderer.invoke('llm:delete', id),

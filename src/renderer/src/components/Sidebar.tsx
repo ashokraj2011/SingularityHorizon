@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ThemeToggle } from './ThemeToggle'
 
 import { AuditPanel } from './AuditPanel'
 import { useStore } from '../store'
@@ -116,6 +117,10 @@ export function Sidebar({ onNew }: { onNew: () => void }): React.JSX.Element {
             ))}
           </>
         )}
+      </div>
+
+      <div className="sidebar-foot">
+        <ThemeToggle />
       </div>
 
       {auditId && <AuditPanel sessionId={auditId} onClose={() => setAuditId(null)} />}

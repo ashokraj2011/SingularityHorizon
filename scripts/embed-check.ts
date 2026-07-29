@@ -189,6 +189,7 @@ const fakeApi: AcpStudioApi = {
     calls.push(`forget:${id}`)
   },
   getAdminPolicy: async () => ({}),
+  rememberTheme: async () => {},
   listEndpoints: async () => [],
   saveEndpoint: async (input) => ({
     endpoint: {

@@ -59,6 +59,22 @@ If the network terminates TLS with its own CA, add `--cafile /path/to/corp-ca.pe
 `cafile` *and* exports `NODE_EXTRA_CA_CERTS`, because the binary downloads use Node's https stack
 directly and never see npm's setting.
 
+## Appearance
+
+Dark and light, switched from the sidebar — **Auto** follows the system, **Light** and **Dark** stick
+regardless. Auto tracks the OS live; an explicit choice does not get undone when the OS changes
+underneath it.
+
+Both themes are token-driven, and every tint is derived with `color-mix` from a semantic colour
+rather than written as a literal `rgba`. A hard-coded `rgba(107, 163, 104, 0.08)` is a dark-theme
+decision hiding inside a component, and it is the usual reason adding a light theme turns into a
+rewrite instead of a palette.
+
+Two details that only matter on launch: the theme is applied before React mounts, and the window's
+initial fill comes from the last theme actually in effect rather than from the OS setting. Otherwise
+someone on a dark system who chose light gets a black flash on every launch — the one frame CSS
+cannot reach.
+
 ## What it does
 
 - **Streaming chat** — assistant text, collapsible reasoning, and tool calls interleaved in the real order they happened.
