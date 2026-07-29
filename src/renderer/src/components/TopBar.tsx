@@ -6,6 +6,7 @@ import { useHostContext, useStore } from '../store'
 import { getSlots } from '../slots'
 import { AuditPanel } from './AuditPanel'
 import { UsagePanel } from './UsagePanel'
+import { EndpointsPanel } from './EndpointsPanel'
 import { ContextPanel } from './ContextPanel'
 
 export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Element {
@@ -18,6 +19,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
   const [panelOpen, setPanelOpen] = useState(false)
   const [auditOpen, setAuditOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  const [endpointsOpen, setEndpointsOpen] = useState(false)
   const policy = useStore((s) => s.adminPolicy)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -179,6 +181,16 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
             </button>
 
             <div className="drop-sep" />
+            <div className="drop-label">Models</div>
+            <button
+              className="drop-item"
+              title="Gateways and APIs the built-in agent can use"
+              onClick={() => act(() => setEndpointsOpen(true))}
+            >
+              LLM gateways and APIs…
+            </button>
+
+            <div className="drop-sep" />
             <div className="drop-label">Session</div>
             <button
               className="menu-item"
@@ -194,6 +206,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
       {panelOpen && <ContextPanel session={session} onClose={() => setPanelOpen(false)} />}
       {auditOpen && <AuditPanel sessionId={session.id} onClose={() => setAuditOpen(false)} />}
       {usageOpen && <UsagePanel onClose={() => setUsageOpen(false)} />}
+      {endpointsOpen && <EndpointsPanel onClose={() => setEndpointsOpen(false)} />}
     </header>
   )
 }

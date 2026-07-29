@@ -41,7 +41,7 @@
     "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
     "guard": "sh scripts/guard-coupling.sh",
     "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --external:typescript --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
-    "check": "npm run guard && npm run install:check && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run policy:check && npm run gate:check && npm run workflow:check && npm run compiler:check && npm run constraint:check && npm run harness:check && npm run provider:check && npm run profile:check && npm run attach:check",
+    "check": "npm run guard && npm run install:check && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run policy:check && npm run gate:check && npm run workflow:check && npm run compiler:check && npm run constraint:check && npm run harness:check && npm run endpoints:check && npm run provider:check && npm run profile:check && npm run attach:check",
     "dist": "electron-vite build && electron-builder",
     "provider:check": "esbuild scripts/provider-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/provider-check.mjs --log-level=error && node out/provider-check.mjs",
     "contract:check": "esbuild scripts/contract-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/contract-check.mjs --log-level=error && node out/contract-check.mjs",
@@ -53,7 +53,8 @@
     "compiler:check": "esbuild scripts/compiler-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/compiler-check.mjs --log-level=error && node out/compiler-check.mjs",
     "constraint:check": "esbuild scripts/constraint-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/constraint-check.mjs --log-level=error && node out/constraint-check.mjs",
     "build:harness": "esbuild src/harness/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/harness/index.mjs --log-level=error",
-    "harness:check": "npm run build:harness && esbuild scripts/harness-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/harness-check.mjs --log-level=error && node out/harness-check.mjs"
+    "harness:check": "npm run build:harness && esbuild scripts/harness-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/harness-check.mjs --log-level=error && node out/harness-check.mjs",
+    "endpoints:check": "esbuild scripts/endpoints-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/endpoints-check.mjs --log-level=error && node out/endpoints-check.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0"

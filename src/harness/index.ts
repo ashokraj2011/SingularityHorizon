@@ -26,8 +26,28 @@ import { configFromEnv, streamChat, type ChatMessage, type ToolSchema } from './
  *          cannot reach the machine even if it decides it would like to
  */
 
-const MODE = (process.env.EH_HARNESS_MODE ?? 'code') as 'code' | 'chat'
+/**
+ * Coding or plain chat, switchable mid-session.
+ *
+ * Advertised as an ACP config option rather than baked into which agent you
+ * picked, so the composer renders the toggle from what the agent declares and
+ * no UI knows this harness exists. Switching takes effect on the next prompt —
+ * it changes what is offered to the model, not anything already in flight.
+ */
+let mode: 'code' | 'chat' = (process.env.EH_HARNESS_MODE ?? 'code') as 'code' | 'chat'
 const MAX_STEPS = Number(process.env.EH_HARNESS_MAX_STEPS ?? 12)
+
+const MODE_OPTION = {
+  type: 'select',
+  id: 'harness_mode',
+  name: 'Mode',
+  description: 'Coding gives the model tools. Chat gives it none at all.',
+  category: 'behaviour',
+  options: [
+    { optionId: 'code', name: 'Coding' },
+    { optionId: 'chat', name: 'Chat' }
+  ]
+}
 
 const send = (msg: unknown): void => {
   process.stdout.write(JSON.stringify(msg) + '\n')
@@ -213,9 +233,12 @@ const history = new Map<string, ChatMessage[]>()
 
 async function handlePrompt(sessionId: string, promptText: string): Promise<string> {
   const cfg = configFromEnv()
-  const messages = history.get(sessionId) ?? [
-    { role: 'system', content: MODE === 'chat' ? SYSTEM_CHAT : SYSTEM_CODE }
-  ]
+  const messages = history.get(sessionId) ?? []
+  // The system message tracks the mode rather than being fixed at session
+  // start: a session switched to chat should stop being told it has tools.
+  const system = mode === 'chat' ? SYSTEM_CHAT : SYSTEM_CODE
+  if (messages[0]?.role === 'system') messages[0] = { role: 'system', content: system }
+  else messages.unshift({ role: 'system', content: system })
   messages.push({ role: 'user', content: promptText })
   history.set(sessionId, messages)
 
@@ -227,7 +250,7 @@ async function handlePrompt(sessionId: string, promptText: string): Promise<stri
     for await (const event of streamChat(cfg, {
       model: cfg.model,
       messages,
-      tools: MODE === 'chat' ? undefined : TOOLS
+      tools: mode === 'chat' ? undefined : TOOLS
     })) {
       if (event.text) {
         text += event.text
@@ -358,13 +381,51 @@ createInterface({ input: process.stdin }).on('line', (line: string) => {
 
     case 'session/new': {
       const cfg = configFromEnv()
+      // Every model the configured endpoint lists, so the existing model picker
+      // works against a gateway exactly as it does against a vendor CLI.
+      const listed = (process.env.EH_HARNESS_MODELS ?? cfg.model)
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean)
+      const available = listed.length ? listed : [cfg.model]
       reply({
         sessionId: `eh-${Date.now().toString(36)}`,
         models: {
-          availableModels: [{ modelId: cfg.model, name: cfg.model }],
+          availableModels: available.map((m) => ({ modelId: m, name: m })),
           currentModelId: cfg.model
-        }
+        },
+        configOptions: [{ ...MODE_OPTION, currentValue: mode }]
       })
+      return
+    }
+
+    case 'session/set_config_option': {
+      const configId = String(msg.params?.configId ?? msg.params?.optionId ?? '')
+      const value = String(msg.params?.value ?? '')
+      if (configId === 'harness_mode' && (value === 'code' || value === 'chat')) {
+        mode = value
+        reply({})
+        // Broadcast so the picker reflects the change even if it came from
+        // somewhere other than the picker.
+        send({
+          jsonrpc: '2.0',
+          method: 'session/update',
+          params: {
+            sessionId: String(msg.params?.sessionId ?? ''),
+            update: {
+              sessionUpdate: 'config_option_update',
+              configOptions: [{ ...MODE_OPTION, currentValue: mode }]
+            }
+          }
+        })
+        return
+      }
+      if (configId === 'model') {
+        process.env.EH_HARNESS_MODEL = value
+        reply({})
+        return
+      }
+      reply({})
       return
     }
 

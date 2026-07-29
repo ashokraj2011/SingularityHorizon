@@ -1600,3 +1600,100 @@ textarea {
   padding: 1px 7px;
   vertical-align: middle;
 }
+
+/* --- LLM endpoints ------------------------------------------------------- */
+
+.endpoint-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.endpoint-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.endpoint-name {
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.endpoint-tag {
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.endpoint-tag.warn {
+  color: var(--yellow);
+  border-color: rgba(212, 162, 78, 0.45);
+}
+
+.endpoint-url,
+.endpoint-models {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--dim);
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.endpoint-actions {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.endpoint-form {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding-top: 4px;
+}
+
+.endpoint-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.endpoint-form input,
+.endpoint-form select {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: var(--fg);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.endpoint-form input:focus,
+.endpoint-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.endpoint-hint {
+  font-size: 11.5px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+.endpoint-hint code {
+  font-family: var(--mono);
+  font-size: 11px;
+}

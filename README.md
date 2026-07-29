@@ -117,10 +117,28 @@ Two presets need nothing installed:
 - **Chat (no tools)** — the same harness with no tools *offered*. Not "asked not to use tools":
   given none, so it cannot reach the machine even if it decides it would like to.
 
-Both talk to any chat-completions endpoint — OpenAI-compatible (what a LiteLLM gateway fronts for
-every model it proxies) or Anthropic Messages — over plain `fetch`, with no SDK dependency. Point
-`EH_HARNESS_BASE_URL` at a gateway and every model behind it becomes either a coding agent or a chat
-window.
+Coding and chat are **one agent with a mode toggle**, not two entries in a list — which of them you
+want changes several times an hour, and picking an agent starts a new session. The harness advertises
+the mode as an ACP config option, so the composer renders the toggle from what the agent declares and
+no part of the UI knows this harness exists. Switching takes effect on the next prompt and keeps the
+conversation.
+
+### Adding gateways and APIs
+
+**⋯ → LLM gateways and APIs.** Add a LiteLLM proxy, an internal endpoint, or a vendor API: a name,
+the wire format (OpenAI-compatible or Anthropic Messages), a base URL, the models it serves, and a
+key. **Test** asks the endpoint for its model list — cheap, needs no valid model, and distinguishes
+wrong host from wrong path from rejected key, which a failed completion does not. The models you
+list appear in the ordinary model picker.
+
+Keys go one way. Typed in, encrypted by the OS keychain in the main process, and from then on the
+only thing the UI knows is whether one exists — the type the renderer receives has no key field at
+all, so nothing can leak through a devtools panel or a state dump. **If the keychain is unavailable
+the key is not written**: the endpoint saves without it and says to use the environment instead.
+Storing a secret in cleartext because the keychain was locked is the kind of convenience that
+becomes an incident.
+
+Everything talks over plain `fetch` with no SDK dependency.
 
 **The harness is written as a real ACP agent, not as a special case inside the app.** That is the
 whole design: the transcript, tool cards, permission gate, workflow runtime, persistence and audit

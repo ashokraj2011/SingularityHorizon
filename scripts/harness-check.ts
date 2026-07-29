@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { AgentSession } from '../src/main/acp/session'
-import { harnessEntry } from '../src/main/agents'
+import { harnessEntry, resolveAgent } from '../src/main/agents'
 import type { AgentDefinition, MainEvent, ThreadBlock } from '../src/shared/ipc'
 
 const watchdog = setTimeout(() => {
@@ -169,6 +169,20 @@ const textOf = (blocks: ThreadBlock[]): string =>
     .map((b) => (b as { text: string }).text)
     .join('\n')
 
+/* ------------------------------------- how the app itself spawns the harness */
+
+// Inside Electron, process.execPath is Electron's binary rather than node, and
+// spawning it with a script path makes Electron try to open the script as an
+// application — the harness never starts and the composer shows no pickers.
+// This assertion is structural because the failure cannot be reproduced here:
+// in a test process execPath really is node, so everything works and nothing
+// is learned. It was found by running the app.
+const resolved = await resolveAgent('built-in')
+ok('the built-in agent runs its host binary as node',
+   resolved.env?.ELECTRON_RUN_AS_NODE === '1', JSON.stringify(resolved.env?.ELECTRON_RUN_AS_NODE))
+ok('and points at the bundled harness',
+   resolved.args.some((a) => a.endsWith('harness/index.mjs')), resolved.args.join(' '))
+
 /* ------------------------------------------------------------- chat mode */
 
 const chatServer = await completionsServer([{ text: 'Hello. I have no tools and no machine.' }])
@@ -236,6 +250,40 @@ ok('and the model got the file contents back as a tool result',
    JSON.stringify(seenRequests[1]?.messages ?? []).includes('a - b'))
 
 codeServer.server.close()
+
+/* ------------------------------------------- the coding / chat toggle */
+
+const toggleServer = await completionsServer([{ text: 'ok' }, { text: 'ok' }])
+const toggleDir = mkdtempSync(join(tmpdir(), 'eh-toggle-'))
+const toggleSession = new AgentSession(harnessAgent(toggleServer.url, 'code'), toggleDir)
+await toggleSession.start()
+
+const advertised = toggleSession.getSnapshot().configOptions.find((o) => o.id === 'harness_mode')
+ok('the harness advertises the mode as a config option', !!advertised)
+// Rendered by the composer from what the agent declares, so no part of the UI
+// has to know this harness exists.
+ok('with both choices', (advertised?.options ?? []).length === 2)
+ok('and starts in coding mode', advertised?.currentValue === 'code', advertised?.currentValue)
+
+seenRequests.length = 0
+await toggleSession.prompt({ text: 'first' })
+ok('coding mode sends tools', (seenRequests.at(-1)?.tools?.length ?? 0) === 3)
+
+await toggleSession.setConfigOption('harness_mode', 'chat')
+seenRequests.length = 0
+await toggleSession.prompt({ text: 'second' })
+// The toggle has to change what the model is *given*, not what it is asked to
+// do — a mode that only edits the system prompt is a suggestion.
+ok('switching to chat removes the tools', !seenRequests.at(-1)?.tools,
+   JSON.stringify(seenRequests.at(-1)?.tools ?? null))
+ok('and the switch is reflected back in the picker',
+   toggleSession.getSnapshot().configOptions.find((o) => o.id === 'harness_mode')?.currentValue ===
+     'chat')
+ok('the same session keeps its history across the switch',
+   JSON.stringify(seenRequests.at(-1)?.messages ?? []).includes('first'))
+
+toggleSession.dispose()
+toggleServer.server.close()
 
 /* ------------------------------- the gate applies to our own agent as well */
 

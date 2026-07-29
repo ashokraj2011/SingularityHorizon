@@ -5,6 +5,7 @@ import { delimiter, isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
 
 import type { AgentDefinition } from '../shared/ipc'
+import { endpointEnv } from './llmEndpoints'
 
 const execFileAsync = promisify(execFile)
 
@@ -176,17 +177,12 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     // Event Horizon's own harness. No CLI to install, and it speaks ACP like
     // everything else — so the gate, the transcript and the workflow runtime
     // treat it exactly as they treat a third party's agent.
+    //
+    // Coding and chat are one agent with a mode toggle rather than two entries
+    // in a list: which of them you want changes several times an hour, and
+    // picking an agent starts a new session.
     id: 'built-in',
-    name: 'Event Horizon (direct)',
-    command: process.execPath,
-    args: [],
-    permissionModel: 'protocol'
-  },
-  {
-    // The same harness with no tools offered: a plain chat window over any
-    // chat-completions endpoint, unable to reach the machine at all.
-    id: 'chat',
-    name: 'Chat (no tools)',
+    name: 'Event Horizon',
     command: process.execPath,
     args: [],
     permissionModel: 'protocol'
@@ -241,7 +237,7 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
 /** First of the agent's candidate binaries that exists on PATH. */
 async function whichAny(agent: AgentDefinition): Promise<string | null> {
   // The bundled harness ships with the app; there is nothing to look for.
-  if (agent.id === 'built-in' || agent.id === 'chat') return agent.command
+  if (agent.id === 'built-in') return agent.command
   for (const candidate of [agent.command, ...(agent.altCommands ?? [])]) {
     const found = await which(candidate)
     if (found) return found
@@ -263,7 +259,8 @@ export async function availableAgents(): Promise<AgentDefinition[]> {
 export async function resolveAgent(
   agentId: string,
   toolProfileId: string = DEFAULT_TOOL_PROFILE,
-  virtualKey?: string
+  virtualKey?: string,
+  endpointId?: string
 ): Promise<AgentDefinition> {
   const preset = BUILTIN_AGENTS.find((a) => a.id === agentId)
   if (!preset) throw new Error(`Unknown agent: ${agentId}`)
@@ -282,10 +279,25 @@ export async function resolveAgent(
 
   // The harness takes its entry point and its mode from us, not from a flag
   // the user could be expected to remember.
-  const builtIn = preset.id === 'built-in' || preset.id === 'chat'
+  const builtIn = preset.id === 'built-in'
   const harnessArgs = builtIn ? [harnessEntry()] : []
+  // The configured endpoint decides where the harness talks and as what. An
+  // endpoint's key is decrypted here and goes straight into the child's
+  // environment; it is never returned to a caller that might render it.
   const harnessEnv: Record<string, string> = builtIn
-    ? { EH_HARNESS_MODE: preset.id === 'chat' ? 'chat' : 'code' }
+    ? {
+        // `process.execPath` is Electron's binary inside the app, not node —
+        // spawning it with a script path makes Electron try to open the script
+        // as an application and nothing happens. This flag is how the same
+        // binary runs as plain Node, and it means a packaged app needs no Node
+        // installed alongside it.
+        //
+        // Not catchable headlessly: in a test process execPath really is node,
+        // so the harness starts and every assertion passes. It only shows up
+        // when the app runs.
+        ELECTRON_RUN_AS_NODE: '1',
+        ...(await endpointEnv(endpointId))
+      }
     : {}
 
   return {

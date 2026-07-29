@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import type { Dirent } from 'node:fs'
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -26,6 +26,14 @@ import {
   loadPolicy
 } from './adminPolicy'
 import { configureStore } from './store/sessionStore'
+import {
+  configureEndpoints,
+  deleteEndpoint,
+  listEndpoints,
+  saveEndpoint,
+  setDefaultEndpoint,
+  testEndpoint
+} from './llmEndpoints'
 import { discoverRepo, ensureAstIgnored } from './repo'
 import { SessionManager } from './manager'
 import { expandSkill, listSkills } from './skills'
@@ -175,6 +183,13 @@ export function registerEventHorizonHandlers(): void {
   handlersRegistered = true
   // An embedding host may never call startStandalone, so configure here too.
   configureStore(join(app.getPath('userData'), 'sessions'))
+  // Keys are encrypted by the OS keychain. safeStorage is passed in rather than
+  // imported by the store, so the store stays runnable outside Electron.
+  configureEndpoints(app.getPath('userData'), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
+    decrypt: (cipherText) => safeStorage.decryptString(Buffer.from(cipherText, 'base64'))
+  })
   registerHandlers()
 }
 
@@ -185,6 +200,11 @@ handle('agents:list', async () => {
   return (await availableAgents()).filter((a) => agentAllowed(policy, a.id))
 })
 handle('adminPolicy:get', (workingDir?: string) => loadPolicy(workingDir))
+handle('llm:list', () => listEndpoints())
+handle('llm:save', (input) => saveEndpoint(input))
+handle('llm:delete', (id: string) => deleteEndpoint(id))
+handle('llm:setDefault', (id: string) => setDefaultEndpoint(id))
+handle('llm:test', (id: string) => testEndpoint(id))
 handle('sessions:list', () => manager.list())
 handle('agents:toolProfiles', () =>
   TOOL_PROFILES.map(({ id, name, description, measuredOverhead }) => ({

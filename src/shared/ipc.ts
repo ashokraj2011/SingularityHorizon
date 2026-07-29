@@ -391,6 +391,36 @@ export interface SymbolHit {
 
 /* ------------------------------------------------------------- agent def */
 
+/**
+ * A configured LLM gateway or API, as the renderer is allowed to see it.
+ *
+ * There is no key on this type, and that is deliberate rather than an omission:
+ * the renderer gets `hasKey` and nothing more, so a secret cannot leak through
+ * a devtools panel or a state dump.
+ */
+export interface LlmEndpoint {
+  id: string
+  name: string
+  provider: 'openai' | 'anthropic'
+  baseUrl: string
+  models: string[]
+  defaultModel?: string
+  hasKey: boolean
+  isDefault: boolean
+}
+
+export interface LlmEndpointInput {
+  /** Absent when creating. */
+  id?: string
+  name: string
+  provider: 'openai' | 'anthropic'
+  baseUrl: string
+  models: string[]
+  defaultModel?: string
+  /** Omit to leave a stored key untouched; empty string clears it. */
+  apiKey?: string
+}
+
 /** What a client-enforced gate can be asked to permit. */
 export type ToolClass = 'terminal' | 'fs.write' | 'fs.read'
 
@@ -481,6 +511,12 @@ export interface AcpStudioApi {
   usageSummary(): Promise<UsageSummary>
   /** Policy in force for a working directory (omit for the global default). */
   getAdminPolicy(workingDir?: string): Promise<AdminPolicy>
+
+  listEndpoints(): Promise<LlmEndpoint[]>
+  saveEndpoint(input: LlmEndpointInput): Promise<{ endpoint: LlmEndpoint; warning?: string }>
+  deleteEndpoint(id: string): Promise<void>
+  setDefaultEndpoint(id: string): Promise<void>
+  testEndpoint(id: string): Promise<{ ok: boolean; message: string }>
   exportAudit(id: string): Promise<AuditRecord>
   /** Writes an audit record to a file the user chooses. Returns the path. */
   saveAudit(id: string, format: 'json' | 'markdown'): Promise<string | null>

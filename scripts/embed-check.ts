@@ -189,6 +189,21 @@ const fakeApi: AcpStudioApi = {
     calls.push(`forget:${id}`)
   },
   getAdminPolicy: async () => ({}),
+  listEndpoints: async () => [],
+  saveEndpoint: async (input) => ({
+    endpoint: {
+      id: 'e1',
+      name: input.name,
+      provider: input.provider,
+      baseUrl: input.baseUrl,
+      models: input.models,
+      hasKey: false,
+      isDefault: true
+    }
+  }),
+  deleteEndpoint: async () => {},
+  setDefaultEndpoint: async () => {},
+  testEndpoint: async () => ({ ok: true, message: 'ok' }),
   usageSummary: async () => ({
     totalSessions: 0,
     sessionsWithUsage: 0,
