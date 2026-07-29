@@ -164,6 +164,107 @@ ok('unknown id alone does not throw', (await loadProvidersFromEnv('nope')).lengt
 ok('singularity-flow is advertised as available',
    availableProviderIds().includes('singularity-flow'))
 
+/* ------------------------------------- work threads, over a stand-in CLI */
+
+/**
+ * A fake `singularity-flow` that answers `--json`.
+ *
+ * The real CLI could not be exercised here: `status --json` and `about --json`
+ * both exit 0 with no output in a repository that has no active work item, and
+ * inventing a shape from the source would test my reading of it rather than the
+ * mapping. So the contract is pinned to a fixture, and what is asserted is the
+ * translation into Event Horizon's vocabulary — which is the part core depends
+ * on and the part that must not drift.
+ */
+function fakeFlowCli(payload: Record<string, unknown>, inbox: unknown[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'eh-flow-'))
+  const bin = join(dir, 'singularity-flow')
+  writeFileSync(bin, [
+    '#!/usr/bin/env node',
+    'const a = process.argv.slice(2)',
+    'if (a[0] === "--version") { console.log("0.9.0"); process.exit(0) }',
+    'if (!a.includes("--json")) { console.log("human readable output"); process.exit(0) }',
+    `if (a[0] === "status") { console.log(${JSON.stringify(JSON.stringify(payload))}); process.exit(0) }`,
+    `if (a[0] === "inbox") { console.log(${JSON.stringify(JSON.stringify(inbox))}); process.exit(0) }`,
+    'process.exit(0)'
+  ].join('\n'))
+  execFileSync('chmod', ['+x', bin])
+  return bin
+}
+
+const flowRepo = mkdtempSync(join(tmpdir(), 'eh-flowrepo-'))
+mkdirSync(join(flowRepo, 'singularity', 'work-items', 'ENG-142'), { recursive: true })
+// Committed work-item state, which is what Flow actually leaves on disk. An
+// empty directory is correctly not a work item — the fallback reads state, not
+// the existence of a folder.
+writeFileSync(
+  join(flowRepo, 'singularity', 'work-items', 'ENG-142', 'workflow.json'),
+  JSON.stringify({ id: 'ENG-142', phase: 'implementation' })
+)
+
+const cli = fakeFlowCli(
+  {
+    workItemId: 'ENG-142',
+    title: 'Pricing rounds down on annual plans',
+    phase: 'implementation',
+    state: 'awaiting-approval',
+    artifacts: [
+      { path: 'singularity/work-items/ENG-142/artifacts/design.md', sha256: 'abc123', phase: 'design' },
+      { path: 'no-hash.md' }
+    ],
+    approvals: [{ decision: 'approved', phase: 'design', at: '2026-07-20T10:00:00Z', by: 'tech-lead' }]
+  },
+  [{ workItemId: 'ENG-9', title: 'Other work', phase: 'design', state: 'active' }]
+)
+
+const flow = singularityFlowProvider({ command: cli })
+
+ok('the provider declares what it supports',
+   (flow.capabilities ?? []).includes('workThreads'))
+ok('and does not claim capabilities it lacks',
+   !(flow.capabilities ?? []).includes('nonexistent' as never))
+
+const thread = await flow.workThread!(flowRepo)
+ok('a work item becomes a work thread', thread?.id === 'ENG-142', String(thread?.id))
+ok('with its title', thread?.title?.includes('Pricing') === true)
+ok('and its phase', thread?.phase === 'implementation')
+// Flow's vocabulary is translated, not passed through.
+ok("Flow's state maps onto Event Horizon's", thread?.status === 'awaiting-approval', thread?.status)
+ok('artifacts carry their content hash',
+   thread?.artifacts?.[0]?.sha256 === 'abc123')
+ok('an artifact without a hash is kept, not dropped',
+   thread?.artifacts?.length === 2, String(thread?.artifacts?.length))
+ok('approvals become decisions', thread?.decisions?.[0]?.text.includes('approved') === true)
+ok('with the person who made them', thread?.decisions?.[0]?.by === 'tech-lead')
+
+// Blast radius is declared, because a host that cannot tell reading from
+// submitting will eventually submit something.
+const submit = thread?.actions?.find((a) => a.id === 'submit')
+const status = thread?.actions?.find((a) => a.id === 'status')
+ok('actions declare their effect', status?.effect === 'read-only' && submit?.effect === 'mutates-repo')
+ok('an action that cannot run right now says so',
+   !!submit?.unavailable, submit?.unavailable)
+ok('and the one that can does not',
+   thread?.actions?.find((a) => a.id === 'approve')?.unavailable === undefined)
+
+const inbox = await flow.listWorkThreads!(flowRepo)
+ok('the inbox lists other threads', inbox.some((t) => t.id === 'ENG-9'))
+
+const ran = await flow.runAction!(flowRepo, 'status')
+ok('an offered action runs', ran.ok)
+// The mapping is an allow-list, not a shell.
+const refused = await flow.runAction!(flowRepo, 'rm -rf /')
+ok('an action that was never offered is refused', !refused.ok)
+ok('and named in the refusal', refused.message.includes('rm -rf'))
+
+// A CLI that says nothing is a healthy repo with no work item, not a failure.
+const silent = singularityFlowProvider({ command: '/nonexistent/singularity-flow' })
+const none = await silent.workThread!(flowRepo)
+ok('a missing CLI falls back to what is on disk', none?.id === 'ENG-142', String(none?.id))
+const emptyRepo = mkdtempSync(join(tmpdir(), 'eh-empty-'))
+ok('and a repo with no work item yields nothing rather than an error',
+   (await silent.workThread!(emptyRepo)) === null)
+
 clearProviders()
 
 console.log('\n--- results ---')

@@ -286,6 +286,58 @@ export interface RepoInfo {
  * What a workflow integration reports about a repo. Deliberately generic: the
  * core renders these without understanding what any of them mean.
  */
+/**
+ * A durable unit of work a provider tracks — a story, a work item, a ticket.
+ *
+ * Event Horizon's own vocabulary, not any provider's. A provider maps whatever
+ * its tool calls this into these fields; core never learns the tool's schema.
+ * That direction matters: the moment core understands one workflow tool's
+ * shape, every other tool becomes a special case of it.
+ */
+export interface WorkThread {
+  id: string
+  title: string
+  /** Whatever the provider calls the current stage. Opaque to core. */
+  phase?: string
+  status?: 'active' | 'awaiting-approval' | 'blocked' | 'done'
+  /** Absolute path this thread's work happens in. */
+  cwd?: string
+  /** Produced work, bound by content hash where the provider records one. */
+  artifacts?: Array<{ path: string; sha256?: string; phase?: string }>
+  /** Decisions already taken, so the UI can show what was agreed. */
+  decisions?: Array<{ text: string; at?: number; by?: string }>
+  /** What the provider says can happen next. Ids are passed back verbatim. */
+  actions?: WorkThreadAction[]
+  /** Provider-specific payload. Core never inspects it. */
+  detail?: Record<string, unknown>
+}
+
+export interface WorkThreadAction {
+  /** Opaque to core — handed straight back to the provider that offered it. */
+  id: string
+  label: string
+  /** Whether running it changes anything the user would want to confirm. */
+  effect: 'read-only' | 'mutates-repo' | 'mutates-remote'
+  /** Set when the provider knows this action cannot run right now. */
+  unavailable?: string
+}
+
+export interface ActionResult {
+  ok: boolean
+  /** Shown to the user verbatim. */
+  message: string
+  detail?: Record<string, unknown>
+}
+
+/**
+ * What a provider can actually do here.
+ *
+ * Declared rather than discovered, so the UI can offer exactly what works
+ * instead of rendering controls that fail on click. A provider that supports
+ * nothing beyond detection is a perfectly good provider.
+ */
+export type ProviderCapability = 'contextDocuments' | 'workThreads' | 'actions'
+
 export interface ProviderStatus {
   id: string
   name: string

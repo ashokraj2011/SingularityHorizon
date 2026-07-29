@@ -3,7 +3,13 @@ import { access, readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
-import type { ContextDocument, ProviderStatus } from '../../shared/ipc'
+import type {
+  ActionResult,
+  ContextDocument,
+  ProviderStatus,
+  WorkThread,
+  WorkThreadAction
+} from '../../shared/ipc'
 import type { WorkspaceProvider } from './types'
 
 const execFileAsync = promisify(execFile)
@@ -67,9 +73,108 @@ export function singularityFlowProvider(
     }
   }
 
+  /**
+   * Parse `--json` output, tolerating a CLI that does not always produce it.
+   *
+   * Flow's JSON surface is wide but not uniform — some commands print nothing
+   * on `--json`, and a command run in a repo with no active work item exits 0
+   * with an empty stdout. Treating that as an error would make the whole
+   * integration look broken on a perfectly healthy repository, so it is treated
+   * as "nothing to say".
+   */
+  const runJson = async <T>(root: string, args: string[]): Promise<T | null> => {
+    const raw = await run(root, [...args, '--json'])
+    if (!raw?.trim()) return null
+    try {
+      // Some commands print a human line before the JSON body.
+      const start = raw.search(/[{[]/)
+      return start === -1 ? null : (JSON.parse(raw.slice(start)) as T)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Flow's shapes, named here and nowhere else.
+   *
+   * Everything below maps them into Event Horizon's vocabulary. Core never
+   * learns what a "generation" or a "publication-pending" is, which is what
+   * keeps a second provider from having to look like this one.
+   */
+  type FlowStatus = {
+    workItemId?: string
+    id?: string
+    title?: string
+    summary?: string
+    phase?: string
+    state?: string
+    status?: string
+    artifacts?: Array<{ path?: string; sha256?: string; hash?: string; phase?: string }>
+    approvals?: Array<{ decision?: string; phase?: string; at?: string; by?: string; actor?: string }>
+  }
+
+  const toThread = (root: string, raw: FlowStatus): WorkThread | null => {
+    const id = raw.workItemId ?? raw.id
+    if (!id) return null
+    const state = (raw.state ?? raw.status ?? '').toLowerCase()
+    return {
+      id,
+      title: raw.title ?? raw.summary ?? id,
+      phase: raw.phase,
+      status: state.includes('await') || state.includes('submit')
+        ? 'awaiting-approval'
+        : state.includes('block')
+          ? 'blocked'
+          : state.includes('complete') || state.includes('done')
+            ? 'done'
+            : 'active',
+      cwd: root,
+      artifacts: (raw.artifacts ?? [])
+        .filter((a) => a.path)
+        .map((a) => ({ path: a.path!, sha256: a.sha256 ?? a.hash, phase: a.phase })),
+      decisions: (raw.approvals ?? []).map((a) => ({
+        text: `${a.decision ?? 'decision'}${a.phase ? ` · ${a.phase}` : ''}`,
+        at: a.at ? Date.parse(a.at) || undefined : undefined,
+        by: a.by ?? a.actor
+      })),
+      actions: actionsFor(raw),
+      detail: { phase: raw.phase, state }
+    }
+  }
+
+  /**
+   * What Flow offers next, declared with its blast radius.
+   *
+   * The effect labels are the point. `submit` rewrites committed state and
+   * `pr` reaches GitHub; a host that treats those the same as reading status
+   * will eventually open a pull request because somebody clicked the wrong row.
+   */
+  const actionsFor = (raw: FlowStatus): WorkThreadAction[] => {
+    const state = (raw.state ?? raw.status ?? '').toLowerCase()
+    const awaiting = state.includes('await') || state.includes('submit')
+    return [
+      { id: 'status', label: 'Refresh status', effect: 'read-only' },
+      { id: 'inputs', label: 'Show approved inputs', effect: 'read-only' },
+      {
+        id: 'submit',
+        label: 'Submit for approval',
+        effect: 'mutates-repo',
+        unavailable: awaiting ? 'already awaiting approval' : undefined
+      },
+      {
+        id: 'approve',
+        label: 'Approve current phase',
+        effect: 'mutates-repo',
+        unavailable: awaiting ? undefined : 'nothing is awaiting approval'
+      },
+      { id: 'pr', label: 'Preview pull request', effect: 'read-only' }
+    ]
+  }
+
   return {
     id: 'singularity-flow',
     name: 'Singularity Flow',
+    capabilities: ['contextDocuments', 'workThreads', 'actions'],
 
     async detect(root: string): Promise<ProviderStatus | null> {
       const version = (await run(root, ['--version']))?.trim().split('\n').pop()?.trim()
@@ -171,6 +276,61 @@ export function singularityFlowProvider(
         }
       }
       return docs
+    },
+
+    async workThread(root: string): Promise<WorkThread | null> {
+      const raw = await runJson<FlowStatus>(root, ['status'])
+      if (raw) return toThread(root, raw)
+
+      // No JSON: fall back to what is on disk. A work item is a directory of
+      // committed files, so an integration that only works when the CLI is
+      // feeling talkative is weaker than it needs to be.
+      const active = await activeFlowWork(
+        join(root, 'singularity', 'work-items'),
+        join(root, 'singularity', 'initiatives')
+      )
+      return active
+        ? { id: active.id, title: active.id, phase: active.phase, status: 'active', cwd: root }
+        : null
+    },
+
+    async listWorkThreads(root: string): Promise<WorkThread[]> {
+      // `inbox --offline` is the queue without touching the network. Anything
+      // that would reach a remote belongs behind an explicit action, not behind
+      // a list the UI refreshes on its own.
+      const rows = await runJson<FlowStatus[]>(root, ['inbox', '--offline'])
+      if (Array.isArray(rows)) {
+        return rows.map((r) => toThread(root, r)).filter((t): t is WorkThread => t !== null)
+      }
+      const one = await this.workThread?.(root)
+      return one ? [one] : []
+    },
+
+    /**
+     * Run one of the actions this provider offered.
+     *
+     * Confirmation is the host's job, not this file's — but the mapping stops
+     * at commands whose blast radius was declared. An action id that was never
+     * offered is refused rather than passed through to the CLI, so this can
+     * never become a general shell.
+     */
+    async runAction(root: string, actionId: string, threadId?: string): Promise<ActionResult> {
+      const argv: Record<string, string[]> = {
+        status: ['status'],
+        inputs: ['inputs'],
+        submit: ['submit'],
+        approve: ['approve'],
+        // Preview only. Opening a PR needs --create and the work id typed out,
+        // which is a decision for a person in front of Flow, not a click here.
+        pr: ['pr', ...(threadId ? [threadId] : [])]
+      }
+      const args = argv[actionId]
+      if (!args) return { ok: false, message: `Unknown action: ${actionId}` }
+
+      const out = await run(root, args)
+      return out === null
+        ? { ok: false, message: `singularity-flow ${args.join(' ')} failed` }
+        : { ok: true, message: out.trim() || `${args.join(' ')} completed`, detail: { actionId } }
     }
   }
 }

@@ -1,4 +1,10 @@
-import type { ContextDocument, ProviderStatus } from '../../shared/ipc'
+import type {
+  ActionResult,
+  ContextDocument,
+  ProviderCapability,
+  ProviderStatus,
+  WorkThread
+} from '../../shared/ipc'
 
 /**
  * The extension point for workflow systems.
@@ -27,6 +33,16 @@ export interface WorkspaceProvider {
   name: string
 
   /**
+   * What this provider supports beyond detection.
+   *
+   * Declared, not probed. A workflow tool with a hundred commands should be
+   * able to expose three of them here without Event Horizon learning anything
+   * about the other ninety-seven, and the UI should never render a control that
+   * turns out to do nothing.
+   */
+  capabilities?: ProviderCapability[]
+
+  /**
    * Cheap applicability check. Return null when this provider has nothing to
    * say about the repo — that is the normal case, not an error.
    */
@@ -48,6 +64,22 @@ export interface WorkspaceProvider {
    * regenerate a handoff before the new session reads it.
    */
   onPhaseEnter?(root: string, phase: string): Promise<void>
+
+  /** The thread this working directory is currently on, if any. */
+  workThread?(root: string): Promise<WorkThread | null>
+
+  /** Everything the provider knows about here — an inbox, a queue, a board. */
+  listWorkThreads?(root: string): Promise<WorkThread[]>
+
+  /**
+   * Run something the provider offered.
+   *
+   * `actionId` came from the provider and goes back to it untouched, so core
+   * never has to know what "submit" or "approve" mean. Anything whose effect is
+   * not `read-only` must be confirmed by the user before this is called — the
+   * provider says what an action does, the host decides whether to ask.
+   */
+  runAction?(root: string, actionId: string, threadId?: string): Promise<ActionResult>
 }
 
 /** Wraps a provider call so a broken integration cannot take the app down. */

@@ -246,6 +246,29 @@ a guarantee it cannot make.
 `npm run constraint:check` injects the schema constraint mid-loop and asserts the write is refused
 through a real ACP session — remove the enforcement and the forbidden migration file appears.
 
+### Bringing a workflow tool's capabilities in
+
+Event Horizon's core knows about repos, sessions, and context. A workflow tool — Singularity Flow,
+or anything else — arrives through the provider seam and brings its own vocabulary with it, mapped
+at the boundary into Event Horizon's:
+
+- **`workThread` / `listWorkThreads`** — the durable unit of work a tool tracks, as a `WorkThread`:
+  id, phase, artifacts bound by content hash, decisions already taken. Core never learns what a
+  "generation" or a "publication-pending" is; the provider translates.
+- **`capabilities`** — declared, not probed. A tool with a hundred commands exposes three here and
+  the UI offers exactly those, instead of rendering a control that fails on click.
+- **`runAction`** — each offered action declares its blast radius: `read-only`, `mutates-repo`,
+  `mutates-remote`. A host that cannot tell reading from submitting will eventually submit
+  something. Action ids come from the provider and go back untouched, and an id that was never
+  offered is refused — the seam is an allow-list, never a general shell.
+
+Everything degrades. A provider that throws, times out, or is pointed at a repo it does not
+understand must return "not applicable" rather than breaking session creation, and a CLI that prints
+nothing is a healthy repo with no active work rather than a failure — the Flow provider falls back
+to reading committed state off disk.
+
+`npm run guard` still fails the build if core imports a concrete provider.
+
 ## Standalone, or embedded in your own app
 
 Both, from one codebase — they are not two modes. The UI imports no Electron and no Node, and
