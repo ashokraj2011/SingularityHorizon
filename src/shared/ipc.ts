@@ -606,6 +606,46 @@ export interface AcpStudioApi {
   /** Read a capability forest for the Navigator. Read-only — writes are `sgh`. */
   loadCapabilities(root: string): Promise<CapabilityView>
 
+  /** What the installed `sgh` can do. Decides what the UI may offer. */
+  sghStatus(): Promise<{
+    installed: boolean
+    version?: string
+    commands: string[]
+    hasCapabilityCommand: boolean
+    hasStateCommand: boolean
+  }>
+
+  /**
+   * Plan a materialization — computed, never performed. §7.3's review step is a
+   * diff preview, and this is its content.
+   */
+  planCapability(
+    root: string,
+    draft: {
+      id: string
+      name?: string
+      kind: 'business' | 'delivery'
+      parent?: string
+      repos?: Array<{ repoId: string; url: string; role?: 'lead' | 'member'; writePolicy?: 'open' | 'gated' }>
+      approvers?: Array<{ role: string; actorId: string }>
+    }
+  ): Promise<{
+    capabilityId: string
+    leadRepoId?: string
+    ledgerKind: 'sidecar' | 'repo'
+    steps: Array<{
+      kind: string
+      target: string
+      summary: string
+      required: boolean
+      file?: { path: string; contents: string }
+    }>
+    errors: string[]
+    questions: string[]
+    command: string
+    runnable: boolean
+  }>
+
   listEndpoints(): Promise<LlmEndpoint[]>
   saveEndpoint(input: LlmEndpointInput): Promise<{ endpoint: LlmEndpoint; warning?: string }>
   deleteEndpoint(id: string): Promise<void>

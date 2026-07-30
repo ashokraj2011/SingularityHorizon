@@ -27,6 +27,8 @@ import {
 } from './adminPolicy'
 import { loadForest } from './capability/load'
 import { buildCapabilityView } from './capability/view'
+import { planMaterialization, type CapabilityDraft } from './capability/plan'
+import { probeSgh } from './sgh'
 import { configureStore } from './store/sessionStore'
 import {
   configureEndpoints,
@@ -213,6 +215,14 @@ handle('theme:remember', (theme: 'dark' | 'light') => rememberTheme(theme))
 handle('capability:load', async (root: string) => {
   const { forest, issues, sources, pointerSources, pointers } = await loadForest(root)
   return buildCapabilityView(root, forest, pointers, issues, sources, pointerSources)
+})
+handle('sgh:status', () => probeSgh())
+handle('capability:plan', async (root: string, draft: CapabilityDraft) => {
+  const { forest } = await loadForest(root)
+  const sgh = await probeSgh()
+  return planMaterialization(draft, forest, {
+    sghHasCapabilityCommand: sgh.hasCapabilityCommand
+  })
 })
 handle('llm:list', () => listEndpoints())
 handle('llm:save', (input) => saveEndpoint(input))

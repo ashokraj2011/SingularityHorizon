@@ -2323,3 +2323,51 @@ textarea {
   color: var(--text-faint);
   cursor: not-allowed;
 }
+
+.cap-add.live {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.cap-add.live:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.cap-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cap-sgh {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.cap-textarea {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  resize: vertical;
+}
+
+.cap-file {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+}

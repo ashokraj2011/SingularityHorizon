@@ -14,6 +14,7 @@ import {
   PolicyIcon,
   RepoIcon
 } from './CapabilityIcons'
+import { CapabilityPlan } from './CapabilityPlan'
 
 /**
  * The Capability Navigator — §7.1, read side.
@@ -40,6 +41,7 @@ export function CapabilityPanel({
   const [selected, setSelected] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   const load = async (root: string): Promise<void> => {
     setLoading(true)
@@ -110,7 +112,11 @@ export function CapabilityPanel({
             </div>
           )}
 
-          {view && view.nodes.length > 0 && (
+          {view && creating && (
+            <CapabilityPlan root={view.root} view={view} onBack={() => setCreating(false)} />
+          )}
+
+          {view && !creating && view.nodes.length > 0 && (
             <div className="cap-split">
               <div className="cap-tree">
                 <div className="cap-source-line">
@@ -147,7 +153,7 @@ export function CapabilityPanel({
 
                 {/* Present because the spec's navigator has it, disabled because
                     creating a capability is an sgh command, not a form post. */}
-                <button className="cap-add" disabled title="Arrives with the sgh command bus">
+                <button className="cap-add live" onClick={() => setCreating(true)}>
                   Add capability ↗
                 </button>
               </div>
@@ -185,8 +191,8 @@ export function CapabilityPanel({
         </div>
 
         <div className="cap-foot">
-          Read-only. Creating, materializing and repo changes are <code>sgh</code> commands that land
-          as stamped commits.
+          Forms in, commits out. Nothing is written from here — creating and materializing produce a
+          previewed plan that <code>sgh</code> applies as one stamped commit.
         </div>
       </div>
     </div>

@@ -199,6 +199,21 @@ const fakeApi: AcpStudioApi = {
     orphanPointers: [],
     valid: true
   }),
+  sghStatus: async () => ({
+    installed: false,
+    commands: [],
+    hasCapabilityCommand: false,
+    hasStateCommand: false
+  }),
+  planCapability: async (_root, draft) => ({
+    capabilityId: draft.id,
+    ledgerKind: 'repo' as const,
+    steps: [],
+    errors: [],
+    questions: [],
+    command: `sgh capability materialize ${draft.id}`,
+    runnable: false
+  }),
   listEndpoints: async () => [],
   saveEndpoint: async (input) => ({
     endpoint: {

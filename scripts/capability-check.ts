@@ -27,6 +27,7 @@ import { parseManifest, parseManifests } from '../src/main/capability/parse'
 import { SIDECAR_LEDGER_REF } from '../src/main/capability/model'
 import { reconcilePointers } from '../src/main/capability/validate'
 import { buildCapabilityView } from '../src/main/capability/view'
+import { planMaterialization, type CapabilityDraft } from '../src/main/capability/plan'
 import {
   ancestryOf,
   depthOf,
@@ -988,6 +989,145 @@ ok('an unsatisfiable gate does raise one',
 const orphaned = buildCapabilityView('/r', forestOf([]), [{ capability: 'gone', repoId: 'r' }], [], [], [])
 ok('a pointer with no capability in the scan is still surfaced',
    orphaned.orphanPointers.length === 1)
+
+/* ==================== materialization plan (§7.3 preview) ================= */
+
+const existing = forestOf([
+  { id: 'digital', kind: 'business', ledger: { kind: 'repo', url: 'u' } },
+  {
+    id: 'platform.contracts',
+    kind: 'delivery',
+    repos: [{ repoId: 'shared', url: 'u', defaultBase: 'main', writePolicy: 'gated', role: 'lead' }]
+  }
+])
+
+const draft: CapabilityDraft = {
+  id: 'digital.sel',
+  name: 'Selector',
+  kind: 'delivery',
+  parent: 'digital',
+  repos: [
+    { repoId: 'sel-svc', url: 'github.com/org/sel-svc', role: 'lead' },
+    { repoId: 'sel-web', url: 'github.com/org/sel-web', role: 'member' }
+  ],
+  approvers: [{ role: 'architect', actorId: 'ashok' }]
+}
+
+const plan = planMaterialization(draft, existing)
+const step = (kind: string): (typeof plan.steps)[number] | undefined =>
+  plan.steps.find((s) => s.kind === kind)
+
+ok('a clean draft plans without errors', plan.errors.length === 0, plan.errors.join('; '))
+ok('a delivery node gets a sidecar ledger', plan.ledgerKind === 'sidecar')
+ok('in its lead repo', plan.leadRepoId === 'sel-svc')
+ok('the plan creates the orphan branch', step('orphan-branch')?.target === 'sel-svc')
+ok('and writes the manifest', !!step('manifest')?.file)
+ok('and CODEOWNERS naming the approver',
+   step('codeowners')?.file?.contents.includes('@ashok') === true)
+ok('CODEOWNERS covers approvals and workflows',
+   step('codeowners')?.file?.contents.includes('approvals/') === true &&
+     step('codeowners')?.file?.contents.includes('workflows/') === true)
+
+// The strongest assertion available: what the plan would write must parse back
+// through the real parser. A preview that emits something the parser rejects is
+// worse than no preview.
+const roundTrip = parseManifest(step('manifest')!.file!.contents)
+ok('the planned manifest parses back cleanly', roundTrip.issues.length === 0,
+   roundTrip.issues.map((i) => i.problem).join('; '))
+ok('and yields the same capability', roundTrip.capabilities[0]?.id === 'digital.sel')
+ok('with the sidecar ledger intact',
+   roundTrip.capabilities[0]?.ledger?.kind === 'sidecar')
+ok('and the lead preserved',
+   roundTrip.capabilities[0]?.repos?.find((r) => r.role === 'lead')?.repoId === 'sel-svc')
+// And the round-tripped node must satisfy the validator, not merely parse.
+ok('the planned manifest also validates',
+   validateForest(forestOf([...existing.byId.values(), roundTrip.capabilities[0]])).valid)
+
+/* ------------------------------- required vs best-effort (the B2 answer) */
+
+// Materialization is several writes across repos and is never atomic, so each
+// step has to say whether the capability exists without it.
+ok('the orphan branch is required', step('orphan-branch')?.required === true)
+ok('the manifest is required', step('manifest')?.required === true)
+ok('CODEOWNERS is required', step('codeowners')?.required === true)
+// The call worth arguing about: without it the node has a ledger and no parent
+// knows it exists, which validates clean today.
+ok('the parent stanza update is required', step('parent-stanza')?.required === true)
+ok('pointer PRs are best-effort', step('pointer-pr')?.required === false)
+ok('branch protection is best-effort', step('branch-protection')?.required === false)
+
+ok('a pointer PR is planned for the member repo', step('pointer-pr')?.target === 'sel-web')
+ok('and not for the lead',
+   plan.steps.filter((s) => s.kind === 'pointer-pr').every((s) => s.target !== 'sel-svc'))
+ok('the pointer file is a back-reference only',
+   step('pointer-pr')?.file?.contents.includes('pointer: capability') === true)
+// And it must be classified as a pointer by the real parser, not a capability.
+ok('and the parser reads it as a pointer',
+   parseManifest(step('pointer-pr')!.file!.contents).pointers.length === 1)
+ok('yielding no capability',
+   parseManifest(step('pointer-pr')!.file!.contents).capabilities.length === 0)
+
+/* ------------------- validated against the prospective forest */
+
+// Single ownership can only be checked against what the forest WOULD be. A
+// failed push halfway through is a much worse place to learn this.
+const conflicting = planMaterialization(
+  { ...draft, repos: [{ repoId: 'shared', url: 'u', role: 'lead' }] },
+  existing
+)
+ok('a repo already owned elsewhere blocks the plan', conflicting.errors.length > 0)
+ok('and the error names the existing owner',
+   conflicting.errors.some((e) => e.includes('platform.contracts')),
+   conflicting.errors.join(' | '))
+
+ok('an unknown parent blocks the plan',
+   planMaterialization({ ...draft, parent: 'ghost' }, existing).errors.some((e) =>
+     e.includes('not in the forest')
+   ))
+ok('an id that already exists blocks the plan',
+   planMaterialization({ ...draft, id: 'digital' }, existing).errors.some((e) =>
+     e.includes('already exists')
+   ))
+ok('a business node owning repos blocks the plan',
+   planMaterialization({ ...draft, kind: 'business' }, existing).errors.some((e) =>
+     e.includes('governance and rollup')
+   ))
+
+/* ---------------------------------------------- business nodes and defaults */
+
+const businessPlan = planMaterialization(
+  { id: 'digital.pzn', kind: 'business', parent: 'digital' },
+  existing
+)
+ok('a business node gets a standalone ledger repo', businessPlan.ledgerKind === 'repo')
+ok('and no orphan branch', !businessPlan.steps.some((s) => s.kind === 'orphan-branch'))
+ok('and no snapshot, having no repos to pin',
+   !businessPlan.steps.some((s) => s.kind === 'snapshot'))
+
+// Mirrors the parser: one repo and no roles stated means that repo leads.
+const inferred = planMaterialization(
+  { id: 'x', kind: 'delivery', repos: [{ repoId: 'only', url: 'u' }] },
+  forestOf([])
+)
+ok('a single repo with no role is planned as the lead', inferred.leadRepoId === 'only')
+ok('and its manifest round-trips with that lead',
+   parseManifest(inferred.steps.find((s) => s.kind === 'manifest')!.file!.contents)
+     .capabilities[0]?.repos?.[0].role === 'lead')
+
+/* ------------------------------------------------- runnability is honest */
+
+// sgh 0.2.1 has gate/approve/stamp/wm and no capability subcommand, so a plan is
+// not runnable regardless of how clean it is. A button that claimed otherwise
+// would be the lie this preview exists to avoid.
+ok('a clean plan is not runnable without the sgh subcommand', plan.runnable === false)
+ok('it names the command that would run it',
+   plan.command === 'sgh capability materialize digital.sel', plan.command)
+ok('and becomes runnable once that command exists',
+   planMaterialization(draft, existing, { sghHasCapabilityCommand: true }).runnable === true)
+ok('but never runnable while errors stand',
+   planMaterialization({ ...draft, parent: 'ghost' }, existing, {
+     sghHasCapabilityCommand: true
+   }).runnable === false)
 
 console.log('--- results ---')
 let failed = 0
