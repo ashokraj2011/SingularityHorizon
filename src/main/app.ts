@@ -25,6 +25,8 @@ import {
   enforceToolProfile,
   loadPolicy
 } from './adminPolicy'
+import { loadForest } from './capability/load'
+import { buildCapabilityView } from './capability/view'
 import { configureStore } from './store/sessionStore'
 import {
   configureEndpoints,
@@ -208,6 +210,10 @@ handle('agents:list', async () => {
 })
 handle('adminPolicy:get', (workingDir?: string) => loadPolicy(workingDir))
 handle('theme:remember', (theme: 'dark' | 'light') => rememberTheme(theme))
+handle('capability:load', async (root: string) => {
+  const { forest, issues, sources, pointerSources, pointers } = await loadForest(root)
+  return buildCapabilityView(root, forest, pointers, issues, sources, pointerSources)
+})
 handle('llm:list', () => listEndpoints())
 handle('llm:save', (input) => saveEndpoint(input))
 handle('llm:delete', (id: string) => deleteEndpoint(id))

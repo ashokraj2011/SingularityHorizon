@@ -26,6 +26,7 @@ import { loadForest } from '../src/main/capability/load'
 import { parseManifest, parseManifests } from '../src/main/capability/parse'
 import { SIDECAR_LEDGER_REF } from '../src/main/capability/model'
 import { reconcilePointers } from '../src/main/capability/validate'
+import { buildCapabilityView } from '../src/main/capability/view'
 import {
   ancestryOf,
   depthOf,
@@ -872,6 +873,121 @@ ok('and the loaded forest validates', validateForest(withPointers.forest).valid,
    validateForest(withPointers.forest).errors.map((e) => e.problem).join('; '))
 ok('the member pointer reconciles clean',
    reconcilePointers(withPointers.forest, withPointers.pointers).length === 0)
+
+/* ------------------------------------------- the Navigator's read model */
+
+// §7.0: every pane is a pure function of (projection state, route). So the
+// projection is fixture-testable without a window, and that is asserted here
+// rather than assumed.
+const viewForest = forestOf([
+  {
+    id: 'digital',
+    kind: 'business',
+    ledger: { kind: 'repo', url: 'github.com/org/digital-ledger' },
+    contacts: [{ actorId: 'ashok', role: 'architect' }],
+    policy: {
+      requiredGates: [{ on: 'deliver', role: 'architect' }],
+      budgets: { maxCostUsdPerThread: 50 },
+      terminalAllowList: ['npm test', 'npm run lint']
+    }
+  },
+  {
+    id: 'digital.sel',
+    kind: 'delivery',
+    parent: 'digital',
+    ledger: { kind: 'sidecar', repo: 'sel-svc', ref: SIDECAR_LEDGER_REF },
+    repos: [
+      { repoId: 'sel-svc', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' },
+      { repoId: 'sel-web', url: 'u', defaultBase: 'main', writePolicy: 'gated', role: 'member' }
+    ],
+    components: [{ id: 'sel-db', kind: 'database', status: 'proposed' }],
+    knowledge: [{ kind: 'design', title: 'Note', url: 'https://w/x', verifiedAt: '2020-01-01' }],
+    policy: {
+      budgets: { maxCostUsdPerThread: 500 },
+      terminalAllowList: ['npm test', 'curl'],
+      // A constraint selecting a still-proposed component: the moment it becomes
+      // load-bearing, §2 says elicit rather than fail.
+      constraints: [
+        {
+          id: 'no-sel-db',
+          forbids: 'writes',
+          selector: { kind: 'db.schema', component: 'sel-db' } as never,
+          text: 'do not touch the selector schema',
+          at: 0
+        }
+      ]
+    }
+  }
+])
+
+const view = buildCapabilityView(
+  '/tmp/root',
+  viewForest,
+  [{ capability: 'digital.sel', repoId: 'sel-web' }],
+  [],
+  ['digital/capability.yaml'],
+  ['sel-web/.singularity/capability.yaml']
+)
+
+const leaf = view.nodes.find((n) => n.id === 'digital.sel')!
+ok('the view is ordered depth-first from the roots',
+   view.nodes.map((n) => n.id).join('>') === 'digital>digital.sel',
+   view.nodes.map((n) => n.id).join('>'))
+ok('depth is precomputed so the renderer only indents', leaf.depth === 1)
+ok('the ledger renders as a label', leaf.ledger?.label === 'sel-svc · singularity/ledger')
+ok('a business ledger renders its url',
+   view.nodes[0].ledger?.kind === 'repo' && view.nodes[0].ledger.label.includes('digital-ledger'))
+ok('the lead repo is identified', leaf.leadRepoId === 'sel-svc')
+
+// §7.1/§7.5: policy rows always carry provenance.
+ok('an inherited gate names the ancestor that declared it',
+   leaf.policy?.gates[0]?.from === 'digital', leaf.policy?.gates[0]?.from)
+ok('the budget is the minimum along the path',
+   leaf.policy?.budgets.find((b) => b.field === 'maxCostUsdPerThread')?.value === 50)
+// "min of digital $50, pzn $40" — a surprising number stays explicable.
+ok('and it lists every ancestor that declared that field',
+   leaf.policy?.budgets.find((b) => b.field === 'maxCostUsdPerThread')?.from.join(',') ===
+     'digital,digital.sel')
+ok('the allow-list is the intersection',
+   JSON.stringify(leaf.policy?.terminalAllowList) === JSON.stringify(['npm test']))
+ok('and names where it was intersected from',
+   leaf.policy?.allowListFrom.join(',') === 'digital,digital.sel')
+
+ok('a component carries its status for a chip', leaf.components[0]?.status === 'proposed')
+// Declaration and observation are different tiers (§2) and must be tellable apart.
+ok('a component with no observation shows none', leaf.components[0]?.observedBy.length === 0)
+// Nags, never garbage-collects (§7.5).
+ok('an old knowledge link is flagged stale', leaf.knowledge[0]?.stale === true)
+ok('a recent one is not',
+   buildCapabilityView('/r', forestOf([
+     { id: 'x', kind: 'delivery',
+       knowledge: [{ kind: 'wiki', title: 'T', url: 'u',
+         verifiedAt: new Date().toISOString().slice(0, 10) }] }
+   ]), [], [], [], []).nodes[0].knowledge[0].stale === false)
+
+ok('a pointer at a member repo produces no finding', leaf.pointerFindings.length === 0)
+ok('an unmaterialized node says so',
+   buildCapabilityView('/r', forestOf([
+     { id: 'x', kind: 'business', policy: { budgets: { maxCostUsdPerThread: 5 } } }
+   ]), [], [], [], []).nodes[0].warnings.some((w) => w.includes('not yet materialized')))
+// Elicitations reach the UI as questions and must not make the view invalid —
+// a constraint selecting a proposed component is a question, not a failure.
+ok('a question surfaces on the node it concerns', leaf.questions.length === 1,
+   `${leaf.questions.length}`)
+ok('and it does not invalidate the view', view.valid)
+ok('a satisfiable gate raises no question',
+   !leaf.questions.some((q) => q.includes('cannot be satisfied')))
+// The one that would fire if nobody held the role.
+ok('an unsatisfiable gate does raise one',
+   buildCapabilityView('/r', forestOf([
+     { id: 'g', kind: 'delivery', policy: { requiredGates: [{ on: 'deliver', role: 'nobody' }] } }
+   ]), [], [], [], []).nodes[0].questions.some((q) => q.includes('cannot be satisfied')))
+
+// A pointer whose capability was never scanned has no node to hang off, and
+// dropping it would hide a stale pointer entirely.
+const orphaned = buildCapabilityView('/r', forestOf([]), [{ capability: 'gone', repoId: 'r' }], [], [], [])
+ok('a pointer with no capability in the scan is still surfaced',
+   orphaned.orphanPointers.length === 1)
 
 console.log('--- results ---')
 let failed = 0

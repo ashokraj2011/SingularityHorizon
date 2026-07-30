@@ -440,6 +440,75 @@ export interface LlmEndpointInput {
   apiKey?: string
 }
 
+/**
+ * The Capability Navigator's read model.
+ *
+ * Flat and fully resolved: policy resolution happens host-side, so the renderer
+ * receives rows to draw rather than a tree to fold. Every policy row carries
+ * where it came from, because a rule that cannot say that leaves somebody
+ * looking at a gate they did not add with nowhere to go.
+ */
+export interface CapabilityViewNode {
+  id: string
+  name?: string
+  kind: 'business' | 'delivery'
+  parent?: string
+  /** Distance from the root, so the renderer only has to indent. */
+  depth: number
+  path: string
+  ledger?: { kind: 'sidecar' | 'repo'; label: string }
+  leadRepoId?: string
+  repos: Array<{
+    repoId: string
+    url: string
+    defaultBase: string
+    writePolicy: 'open' | 'gated'
+    role: 'lead' | 'member'
+  }>
+  components: Array<{
+    id: string
+    kind: string
+    tech?: string
+    status: 'proposed' | 'confirmed' | 'stale' | 'contradicted'
+    observedBy: string[]
+    declaredBy?: string
+  }>
+  consumes: Array<{ provider: string; component?: string; contract?: string }>
+  knowledge: Array<{
+    kind: string
+    title: string
+    url: string
+    tags: string[]
+    verifiedAt?: string
+    stale: boolean
+  }>
+  contacts: Array<{ actorId: string; role: string }>
+  tracker?: { system: 'jira'; projectKey: string }
+  policy?: {
+    gates: Array<{ on: string; role: string; scope?: string; from: string }>
+    budgets: Array<{ field: string; value: number; from: string[] }>
+    terminalAllowList?: string[]
+    allowListFrom: string[]
+    constraints: Array<{ id: string; forbids: string; selector: string }>
+  }
+  errors: string[]
+  /** Elicitations — questions, not failures. */
+  questions: string[]
+  pointerFindings: Array<{ kind: string; repoId: string; detail: string }>
+  warnings: string[]
+}
+
+export interface CapabilityView {
+  root: string
+  sources: string[]
+  pointerSources: string[]
+  nodes: CapabilityViewNode[]
+  issues: Array<{ source?: string; at: string; problem: string }>
+  /** Pointers whose capability is not in the scanned forest. */
+  orphanPointers: Array<{ kind: string; repoId: string; detail: string }>
+  valid: boolean
+}
+
 /** What a client-enforced gate can be asked to permit. */
 export type ToolClass = 'terminal' | 'fs.write' | 'fs.read'
 
@@ -533,6 +602,9 @@ export interface AcpStudioApi {
 
   /** Records the theme in effect, so the next launch fills the window to match. */
   rememberTheme(theme: 'dark' | 'light'): Promise<void>
+
+  /** Read a capability forest for the Navigator. Read-only — writes are `sgh`. */
+  loadCapabilities(root: string): Promise<CapabilityView>
 
   listEndpoints(): Promise<LlmEndpoint[]>
   saveEndpoint(input: LlmEndpointInput): Promise<{ endpoint: LlmEndpoint; warning?: string }>

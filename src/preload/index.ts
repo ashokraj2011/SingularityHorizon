@@ -19,6 +19,7 @@ const api: AcpStudioApi = {
   usageSummary: () => ipcRenderer.invoke('sessions:usageSummary'),
   getAdminPolicy: (workingDir) => ipcRenderer.invoke('adminPolicy:get', workingDir),
   rememberTheme: (theme) => ipcRenderer.invoke('theme:remember', theme),
+  loadCapabilities: (root) => ipcRenderer.invoke('capability:load', root),
   listEndpoints: () => ipcRenderer.invoke('llm:list'),
   saveEndpoint: (input) => ipcRenderer.invoke('llm:save', input),
   deleteEndpoint: (id) => ipcRenderer.invoke('llm:delete', id),

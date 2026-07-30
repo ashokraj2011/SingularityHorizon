@@ -7,6 +7,7 @@ import { getSlots } from '../slots'
 import { AuditPanel } from './AuditPanel'
 import { UsagePanel } from './UsagePanel'
 import { EndpointsPanel } from './EndpointsPanel'
+import { CapabilityPanel } from './CapabilityPanel'
 import { ContextPanel } from './ContextPanel'
 
 export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Element {
@@ -20,6 +21,7 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
   const [auditOpen, setAuditOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [endpointsOpen, setEndpointsOpen] = useState(false)
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false)
   const policy = useStore((s) => s.adminPolicy)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -181,6 +183,16 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
             </button>
 
             <div className="drop-sep" />
+            <div className="drop-label">Governance</div>
+            <button
+              className="drop-item"
+              title="The capability forest, its policy fold, and pointer reconciliation"
+              onClick={() => act(() => setCapabilitiesOpen(true))}
+            >
+              Capabilities…
+            </button>
+
+            <div className="drop-sep" />
             <div className="drop-label">Models</div>
             <button
               className="drop-item"
@@ -207,6 +219,9 @@ export function TopBar({ session }: { session: SessionSnapshot }): React.JSX.Ele
       {auditOpen && <AuditPanel sessionId={session.id} onClose={() => setAuditOpen(false)} />}
       {usageOpen && <UsagePanel onClose={() => setUsageOpen(false)} />}
       {endpointsOpen && <EndpointsPanel onClose={() => setEndpointsOpen(false)} />}
+      {capabilitiesOpen && (
+        <CapabilityPanel initialRoot={session.cwd} onClose={() => setCapabilitiesOpen(false)} />
+      )}
     </header>
   )
 }

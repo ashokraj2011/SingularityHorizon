@@ -190,6 +190,15 @@ const fakeApi: AcpStudioApi = {
   },
   getAdminPolicy: async () => ({}),
   rememberTheme: async () => {},
+  loadCapabilities: async (root) => ({
+    root,
+    sources: [],
+    pointerSources: [],
+    nodes: [],
+    issues: [],
+    orphanPointers: [],
+    valid: true
+  }),
   listEndpoints: async () => [],
   saveEndpoint: async (input) => ({
     endpoint: {

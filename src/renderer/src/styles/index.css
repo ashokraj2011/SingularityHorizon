@@ -1848,3 +1848,316 @@ textarea {
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
+
+/* --- capability navigator ------------------------------------------------ */
+
+.capability-sheet {
+  /* `.sheet` caps at 560px; the navigator is a two-column layout and needs the
+     override on max-width, not only width. */
+  width: min(1080px, 94vw);
+  max-width: min(1080px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.cap-head-actions {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.cap-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 18px;
+}
+
+.cap-split {
+  display: grid;
+  grid-template-columns: 270px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.cap-tree {
+  border-right: 1px solid var(--border);
+  padding-right: 12px;
+  min-width: 0;
+}
+
+.cap-source-line {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 0 0 8px 10px;
+}
+
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.cap-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.cap-row.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.cap-row-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Materialization is visible, not explained. */
+.cap-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.cap-flag {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+
+.cap-flag.error {
+  color: var(--red);
+}
+
+.cap-flag.warn {
+  color: var(--yellow);
+}
+
+.cap-detail {
+  min-width: 0;
+}
+
+.cap-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.cap-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.cap-kind.delivery {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.cap-path {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+.cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  /* min-width:0 so the label can shrink; the kind badge must never break, which
+     is what turned "REPO" into "REP / O". */
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cap-chip.muted {
+  color: var(--text-faint);
+}
+
+.cap-chip-kind {
+  font-family: var(--sans);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex: none;
+}
+
+.cap-section {
+  margin-top: 16px;
+}
+
+.cap-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 5px;
+  margin-bottom: 5px;
+}
+
+/* Every section names where it came from. */
+.cap-source {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10.5px;
+  opacity: 0.75;
+}
+
+.cap-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+  flex-wrap: wrap;
+}
+
+.cap-line.error .cap-mono {
+  color: var(--red);
+}
+
+.cap-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.cap-dim {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.cap-prov {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.cap-prov.warn {
+  color: var(--yellow);
+}
+
+.cap-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.cap-badge.warn {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+}
+
+.cap-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.cap-status.confirmed {
+  color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
+
+.cap-status.proposed {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+}
+
+.cap-status.stale,
+.cap-status.contradicted {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+
+.cap-link {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.cap-link:hover {
+  text-decoration: underline;
+}
+
+.cap-note {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--bg-inset);
+  border-left: 2px solid var(--border);
+  color: var(--text-dim);
+}
+
+.cap-note.error {
+  border-left-color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+
+.cap-note.warn {
+  border-left-color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 8%, transparent);
+}
+
+.cap-foot {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 9px 18px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.cap-foot code {
+  font-family: var(--mono);
+}
+
+.cap-chip-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -265,6 +265,23 @@ unsatisfiable one elicits, because failing it would push people to add placehold
 the validator. Worth knowing what the binding implies: editing `contacts` changes who may approve,
 mitigated (not removed) by the manifest PR itself being gated by CODEOWNERS on the parent ledger.
 
+### The Navigator
+
+**⋯ → Capabilities…** opens the read side of the tree: forest on the left with materialization
+visible as a dot, detail on the right where **every section names its source** and **every policy row
+carries provenance** — `declared here`, `inherited from digital`, `min along digital,
+digital.pzn.treatment-selector`, `intersection of …`. A gate you did not add is traceable to the
+ancestor that did, without leaving the pane.
+
+It renders a projection computed in the main process, because policy resolution is host-side and a
+pane should be a pure function of (projection, route). The renderer folds nothing and holds no
+authority, which is also what makes the projection fixture-testable without a window.
+
+**Read-only, and that is the shape rather than a limitation.** Creating a capability, materializing a
+ledger and changing repos are `sgh` commands that land as stamped commits — a UI that wrote manifests
+directly would be the second source of truth the architecture rules out. The write half arrives with
+the command bus, not before it.
+
 ### Adding one
 
 Write a stanza in the owning node's `capability.yaml`. A child stays inline in its parent until it
