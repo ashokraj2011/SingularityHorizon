@@ -16,7 +16,7 @@ import { configFromEnv, streamChat, type ChatMessage, type ToolSchema } from './
  * The consequence worth stating plainly: this process never touches the
  * filesystem or spawns a shell. Every tool is a call back to the client —
  * `fs/read_text_file`, `fs/write_text_file`, `terminal/*` — so workspace
- * containment, the capability lattice, and any injected constraint all hold.
+ * containment, the mode lattice, and any injected constraint all hold.
  * A harness that read files directly would be faster and would quietly opt
  * itself out of every guarantee the client makes.
  *

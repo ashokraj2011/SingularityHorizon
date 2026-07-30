@@ -1,7 +1,7 @@
 import type { SessionMode, ToolClass } from '../../shared/ipc'
 
 /**
- * Client-side capability enforcement — the per-session gate.
+ * Client-side mode enforcement — the per-session gate.
  *
  * Not to be confused with main/adminPolicy.ts, which is org and repository
  * configuration. That one decides what a user may choose; this one decides
@@ -35,7 +35,7 @@ import type { SessionMode, ToolClass } from '../../shared/ipc'
  * Ordered, and strictly cumulative: every mode allows everything the previous
  * one did. Anything else would make "raise the mode" an unsafe operation.
  */
-const MODE_CAPABILITIES: Record<SessionMode, ToolClass[]> = {
+const MODE_TOOL_CLASSES: Record<SessionMode, ToolClass[]> = {
   discuss: [],
   explore: ['fs.read'],
   // Planning reads and reasons; it does not write. Same reach as explore, kept
@@ -122,12 +122,12 @@ export function defaultPolicy(): SessionPolicy {
   return { mode: 'deliver', grants: [] }
 }
 
-export function capabilitiesOf(mode: SessionMode): ToolClass[] {
-  return MODE_CAPABILITIES[mode] ?? []
+export function toolClassesOf(mode: SessionMode): ToolClass[] {
+  return MODE_TOOL_CLASSES[mode] ?? []
 }
 
 export function modeAllows(mode: SessionMode, toolClass: ToolClass): boolean {
-  return capabilitiesOf(mode).includes(toolClass)
+  return toolClassesOf(mode).includes(toolClass)
 }
 
 /* --------------------------------------------------------------- classifier */
@@ -329,5 +329,5 @@ export function grantFor(
  * every call for a user who explicitly asked not to be asked.
  */
 export function allowAllGrants(mode: SessionMode): Grant[] {
-  return capabilitiesOf(mode).map((toolClass) => ({ toolClass, scope: 'always' as const }))
+  return toolClassesOf(mode).map((toolClass) => ({ toolClass, scope: 'always' as const }))
 }

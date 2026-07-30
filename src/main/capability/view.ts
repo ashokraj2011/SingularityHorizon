@@ -1,6 +1,6 @@
 import type { CapabilityForest } from './model'
 import { childrenOf, depthOf, pathOf, rootsOf } from './model'
-import type { CapabilityPointer, ParseIssue } from './parse'
+import type { CapabilityPointer, Declaration, ParseIssue } from './parse'
 import {
   emptyNodes,
   pendingMaterialization,
@@ -37,9 +37,12 @@ export function buildCapabilityView(
   pointers: CapabilityPointer[],
   issues: ParseIssue[],
   sources: string[],
-  pointerSources: string[]
+  pointerSources: string[],
+  declarations?: Declaration[]
 ): CapabilityView {
-  const validation = validateForest(forest)
+  // Declarations come from the same scan as `forest`, which is what makes R19
+  // safe to run here: the Navigator always shows a whole walk of one root.
+  const validation = validateForest(forest, declarations)
   const findings = reconcilePointers(forest, pointers)
   const pending = new Set(pendingMaterialization(forest))
   const empty = new Set(emptyNodes(forest))

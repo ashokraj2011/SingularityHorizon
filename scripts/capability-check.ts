@@ -1131,6 +1131,132 @@ ok('but never runnable while errors stand',
      sghHasCapabilityCommand: true
    }).runnable === false)
 
+/* ======================================================= reachability (R19) */
+
+// The state this exists to catch: the ledger write landed, the parent stanza
+// did not. Before R19 this validated clean, which is why it is the one partial
+// outcome that could survive unnoticed.
+const parentDoc = dumpYaml({ id: 'root', kind: 'business', ledger: { url: 'root-ledger' } })
+const orphanedChild = dumpYaml({
+  id: 'root.svc',
+  kind: 'delivery',
+  parent: 'root',
+  ledger: { kind: 'sidecar', repo: 'svc', ref: SIDECAR_LEDGER_REF },
+  repos: [{ repoId: 'svc', url: 'u', role: 'lead' }]
+})
+
+const unreachable = parseManifests([
+  { source: 'root', text: parentDoc },
+  { source: 'child', text: orphanedChild }
+])
+const unreachableCheck = validateForest(unreachable.forest, unreachable.declarations)
+ok('a materialized node with no parent stanza is an error',
+   unreachableCheck.errors.some((e) => e.capabilityId === 'root.svc'),
+   unreachableCheck.errors.map((e) => e.problem).join(' | '))
+ok('and the message names what to re-run',
+   unreachableCheck.errors.some((e) => e.problem.includes('parent stanza')))
+ok('which makes the forest invalid', unreachableCheck.valid === false)
+
+// The same pair, with the stub the applier actually writes.
+const withStanza = parseManifests([
+  {
+    source: 'root',
+    text: dumpYaml({
+      id: 'root',
+      kind: 'business',
+      ledger: { url: 'root-ledger' },
+      children: [
+        {
+          id: 'root.svc',
+          kind: 'delivery',
+          ledger: { kind: 'sidecar', repo: 'svc', ref: SIDECAR_LEDGER_REF }
+        }
+      ]
+    })
+  },
+  { source: 'child', text: orphanedChild }
+])
+const reachableCheck = validateForest(withStanza.forest, withStanza.declarations)
+ok('a stub in the parent makes it reachable',
+   !reachableCheck.errors.some((e) => e.capabilityId === 'root.svc'),
+   reachableCheck.errors.map((e) => e.problem).join(' | '))
+ok('and the forest is valid again', reachableCheck.valid === true)
+
+// The guard. Without declarations the rule cannot tell "not written" from "not
+// scanned", so it must not run at all rather than guess.
+ok('without declarations the rule does not fire',
+   validateForest(unreachable.forest).errors.every((e) => !e.problem.includes('unreachable')))
+
+// A partial scan is the dangerous false positive: reading only the child's
+// ledger must not accuse it of being unreachable from a parent nobody read.
+const partialScan = parseManifests([{ source: 'child', text: orphanedChild }])
+ok('a scan that never read the parent reports no reachability error',
+   !validateForest(partialScan.forest, partialScan.declarations).errors.some((e) =>
+     e.problem.includes('unreachable')
+   ),
+   validateForest(partialScan.forest, partialScan.declarations).errors
+     .map((e) => e.problem).join(' | '))
+
+// A parent that is itself only a stub means its real manifest was not read, so
+// its children cannot be judged either.
+const parentIsStub = parseManifests([
+  {
+    source: 'grandparent',
+    text: dumpYaml({
+      id: 'top',
+      kind: 'business',
+      children: [{ id: 'root', kind: 'business', ledger: { url: 'root-ledger' } }]
+    })
+  },
+  { source: 'child', text: orphanedChild }
+])
+ok('a parent seen only as a stub is not enough evidence to judge its children',
+   !validateForest(parentIsStub.forest, parentIsStub.declarations).errors.some((e) =>
+     e.capabilityId === 'root.svc' && e.problem.includes('unreachable')
+   ),
+   validateForest(parentIsStub.forest, parentIsStub.declarations).errors
+     .map((e) => `${e.capabilityId}: ${e.problem}`).join(' | '))
+
+// An unmaterialized node IS the stanza, so the rule must not apply to it.
+const inlineOnly = parseManifests([
+  {
+    source: 'root',
+    text: dumpYaml({
+      id: 'root',
+      kind: 'business',
+      ledger: { url: 'root-ledger' },
+      children: [{ id: 'root.svc', kind: 'delivery' }]
+    })
+  }
+])
+ok('an inline node with no ledger of its own is never unreachable',
+   !validateForest(inlineOnly.forest, inlineOnly.declarations).errors.some((e) =>
+     e.problem.includes('unreachable')
+   ))
+
+// The rule is about ledgers, not about nodes. A node with a parent but no ledger
+// of its own has nothing for anyone to fail to find, even when it is declared in
+// its own document rather than inline — so it must not be judged.
+const unmaterializedElsewhere = parseManifests([
+  { source: 'root', text: parentDoc },
+  { source: 'stray', text: dumpYaml({ id: 'root.plan', kind: 'delivery', parent: 'root' }) }
+])
+ok('a node with no ledger is never unreachable, wherever it was declared',
+   !validateForest(unmaterializedElsewhere.forest, unmaterializedElsewhere.declarations).errors
+     .some((e) => e.problem.includes('unreachable')),
+   validateForest(unmaterializedElsewhere.forest, unmaterializedElsewhere.declarations).errors
+     .map((e) => `${e.capabilityId}: ${e.problem}`).join(' | '))
+
+// Roots have no parent to be reachable from.
+const rootOnly = parseManifests([{ source: 'root', text: parentDoc }])
+ok('a root with its own ledger is not judged',
+   validateForest(rootOnly.forest, rootOnly.declarations).valid === true)
+
+ok('declarations distinguish a top-level entry from an inline child',
+   withStanza.declarations.filter((d) => d.id === 'root.svc').some((d) => d.inlineParent === 'root') &&
+     withStanza.declarations.filter((d) => d.id === 'root.svc').some((d) => !d.inlineParent),
+   JSON.stringify(withStanza.declarations))
+
 /* ============================================ compiling a plan to API calls */
 
 const repoUrls = { 'sel-svc': 'github.com/acme/sel-svc', 'sel-web': 'github.com/acme/sel-web' }

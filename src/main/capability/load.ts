@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 import type { CapabilityForest } from './model'
-import { parseManifests, type CapabilityPointer, type ParseIssue } from './parse'
+import { parseManifests, type CapabilityPointer, type Declaration, type ParseIssue } from './parse'
 
 /**
  * The only file in this directory that touches disk.
@@ -30,6 +30,11 @@ export interface LoadResult {
   pointerSources: string[]
   /** Member-repo back-references, for reconcilePointers. */
   pointers: CapabilityPointer[]
+  /**
+   * Pre-dedup occurrences, for the reachability rule. Only meaningful alongside
+   * the scan that produced them — see validateForest's R19 guard.
+   */
+  declarations: Declaration[]
 }
 
 const MANIFEST_NAME = 'capability.yaml'
@@ -101,7 +106,8 @@ export async function loadForest(root: string, maxDepth = 6): Promise<LoadResult
       issues: [{ at: root, problem: 'no such directory' }],
       sources: [],
       pointerSources: [],
-      pointers: []
+      pointers: [],
+      declarations: []
     }
   }
 
@@ -130,6 +136,7 @@ export async function loadForest(root: string, maxDepth = 6): Promise<LoadResult
     // parsing — classification is by content, not by path.
     sources: readable.map((d) => d.source ?? '').filter((s) => !pointerSources.has(s)),
     pointerSources: [...pointerSources],
-    pointers: parsed.pointers
+    pointers: parsed.pointers,
+    declarations: parsed.declarations
   }
 }

@@ -76,7 +76,7 @@ export class AgentSession extends EventEmitter {
   private permissionWaiters = new Map<string, PermissionWaiter>()
 
   /**
-   * Client-enforced capability policy. Never sent to the agent and never
+   * Client-enforced mode policy. Never sent to the agent and never
    * settable by it — an agent that could raise its own mode would be back to
    * enforcing its own manners.
    */
@@ -540,10 +540,10 @@ export class AgentSession extends EventEmitter {
     }
   }
 
-  /* --------------------------------------------------- capability gate */
+  /* --------------------------------------------------------- mode gate */
 
   /**
-   * Pin the capability mode. Set by the host; never by the agent.
+   * Pin the mode. Set by the host; never by the agent.
    *
    * `autoGrant` is for governed workflow steps, where a human already approved
    * the workflow definition and there is nobody sitting in front of the run to

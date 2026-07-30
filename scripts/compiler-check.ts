@@ -7,7 +7,7 @@
  * "Near-empty" is made checkable by classifying differences rather than
  * counting them. A compiled workflow whose prompts are worded differently is
  * the same workflow; one whose timeouts differ permits exactly the same
- * actions; one whose capability modes differ does not. Only the last kind has
+ * actions; one whose modes differ does not. Only the last kind has
  * to be zero, and it is asserted at zero.
  *
  * Note what the draft below does *not* carry: timeouts. A conversation does not
@@ -28,7 +28,7 @@ import { validate } from '../src/main/workflow/ir'
 import { holesOf, maturityOf, seal, type PartialWorkflow } from '../src/main/workflow/partial'
 import { answer, compile, type CompileResult, type Fabric } from '../src/main/workflow/compiler'
 import { DEFAULT_PLAYBOOK } from '../src/main/workflow/playbook'
-import { capabilityOnly, diffWorkflows, summarize } from '../src/main/workflow/diff'
+import { modeOnly, diffWorkflows, summarize } from '../src/main/workflow/diff'
 import { applyPlanEdit, toPlan } from '../src/main/workflow/projection'
 
 const checks: Array<[string, boolean, string?]> = []
@@ -204,7 +204,7 @@ const askedAbout = (r: CompileResult, field: string): boolean =>
 
 ok('it does not ask which agent to use', !askedAbout(round1, 'agentId'))
 ok('it does not ask for a tool profile', !askedAbout(round1, 'toolProfile'))
-ok('it does not ask for a capability mode', !askedAbout(round1, 'mode'))
+ok('it does not ask for a mode', !askedAbout(round1, 'mode'))
 ok('it does not ask for a step timeout', !askedAbout(round1, 'budget.timeoutSec'))
 // And the fabric: what the repository already knows is not a question either.
 ok('it does not ask what the analyst reads', !askedAbout(round1, 'effects.reads'))
@@ -226,7 +226,7 @@ ok('a fabric binding is attributed to the repository model',
    round1.bindings.some((b) => b.route === 'fabric' && b.field === 'effects.reads'))
 
 // Capability is bound from the role, not from the conversation.
-ok('the analyst was bound to a read-only capability',
+ok('the analyst was bound to a read-only mode',
    round1.bindings.some((b) => b.nodeId === 'analyse' && b.field === 'mode' && b.value === 'explore'))
 ok('the implementer was bound to edit',
    round1.bindings.some((b) => b.nodeId === 'implement' && b.field === 'mode' && b.value === 'edit'))
@@ -276,26 +276,26 @@ ok('and it did ask some — silence would mean it guessed', questionsAsked > 0)
 /* ------------------------------------------------------------- the diff */
 
 const differences = diffWorkflows(goldenPath(), final.workflow!)
-const capability = capabilityOnly(differences)
+const modeDiffs = modeOnly(differences)
 
 ok('nothing that changes what the run may do differs from the hand-written version',
-   capability.length === 0, summarize(capability))
+   modeDiffs.length === 0, summarize(modeDiffs))
 ok('the diff is near-empty overall', differences.length <= 4,
    `${differences.length}:\n${summarize(differences)}`)
-// Anything left should be a timeout somebody picked by hand, not a capability.
+// Anything left should be a timeout somebody picked by hand, not a mode.
 ok('and what remains is only budgets or wording',
    differences.every((d) => d.kind === 'budget' || d.kind === 'prose'),
-   summarize(differences.filter((d) => d.kind === 'capability')))
+   summarize(differences.filter((d) => d.kind === 'mode')))
 
 // The diff has to be able to see a real difference, or "zero" means nothing.
 const tampered = JSON.parse(JSON.stringify(goldenPath()))
 tampered.nodes[0].mode = 'deliver'
 ok('the diff detects a raised capability',
-   capabilityOnly(diffWorkflows(goldenPath(), tampered)).some((d) => d.path.includes('mode')))
+   modeOnly(diffWorkflows(goldenPath(), tampered)).some((d) => d.path.includes('mode')))
 ok('and ignores a reworded prompt', (() => {
   const reworded = JSON.parse(JSON.stringify(goldenPath()))
   reworded.nodes[0].prompt = 'Completely different wording, same step.'
-  return capabilityOnly(diffWorkflows(goldenPath(), reworded)).length === 0
+  return modeOnly(diffWorkflows(goldenPath(), reworded)).length === 0
 })())
 
 /* --------------------------------------------------------- the projection */

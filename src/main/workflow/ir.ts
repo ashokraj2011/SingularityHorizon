@@ -65,7 +65,7 @@ export interface AgentNode extends BaseNode {
   agentId: string
   toolProfile: 'full' | 'no-mcp' | 'lean' | 'minimal'
   workspace: 'readonly' | 'isolatedWorktree'
-  /** The M1 capability lattice, pinned per step. */
+  /** The M1 mode lattice, pinned per step. */
   mode: SessionMode
   /** The instruction this step gives its agent. */
   prompt: string
@@ -77,7 +77,7 @@ export interface AgentNode extends BaseNode {
    * The runtime writes it, not the agent — which is what lets an analyst run in
    * `explore` mode and still produce a design document. Making the agent write
    * its own artifact would force every step that emits one up to `edit`, and
-   * the capability a step needs would be decided by bookkeeping rather than by
+   * the mode a step needs would be decided by bookkeeping rather than by
    * what the step actually does.
    */
   artifactPath?: string

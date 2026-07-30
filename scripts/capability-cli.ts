@@ -71,7 +71,7 @@ const has = (name: string): boolean => flags.has(name)
 
 const root = positionals[0] ?? process.cwd()
 
-const { forest, issues, sources, pointerSources, pointers } = await loadForest(root)
+const { forest, issues, sources, pointerSources, pointers, declarations } = await loadForest(root)
 
 console.log(`capability forest · ${root}`)
 console.log(
@@ -95,7 +95,9 @@ if (issues.length) {
 
 /* --------------------------------------------------------------- validation */
 
-const result = validateForest(forest)
+// The CLI walks a whole root, so declarations are safe to pass — R19 needs
+// them and refuses to judge without them.
+const result = validateForest(forest, declarations)
 
 if (result.errors.length) {
   console.log('\nvalidation errors')

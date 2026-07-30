@@ -80,7 +80,7 @@ function fieldsOf(node: WorkflowNode): PlanField[] {
     case 'agent':
       return [
         { path: 'agentId', label: 'Agent', value: node.agentId, editable: true },
-        { path: 'mode', label: 'Capability', value: node.mode, editable: true, options: MODES },
+        { path: 'mode', label: 'Mode', value: node.mode, editable: true, options: MODES },
         {
           path: 'toolProfile',
           label: 'Tool profile',

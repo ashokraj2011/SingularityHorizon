@@ -22,7 +22,7 @@ import { join } from 'node:path'
 import { AgentSession } from '../src/main/acp/session'
 import {
   allowAllGrants,
-  capabilitiesOf,
+  toolClassesOf,
   classify,
   decide,
   defaultPolicy,
@@ -45,8 +45,8 @@ const ok = (n: string, p: boolean, d?: string): void => {
 // "raise the mode to get past this" would silently break something else.
 let cumulative = true
 for (let i = 1; i < MODE_ORDER.length; i++) {
-  const prev = capabilitiesOf(MODE_ORDER[i - 1])
-  const next = capabilitiesOf(MODE_ORDER[i])
+  const prev = toolClassesOf(MODE_ORDER[i - 1])
+  const next = toolClassesOf(MODE_ORDER[i])
   if (!prev.every((c) => next.includes(c))) cumulative = false
 }
 ok('the mode lattice is cumulative', cumulative)

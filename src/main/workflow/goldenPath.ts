@@ -14,7 +14,7 @@ import type { Workflow } from './ir'
  * it cannot write anything and costs a fraction of a request. The implementer
  * runs full and `edit`, in an isolated worktree. Verification runs commands but
  * cannot edit. That per-step variation is the whole point of the IR: token
- * profile, capability, and model become workflow policy rather than a global
+ * profile, mode, and model become workflow policy rather than a global
  * setting someone has to remember to change.
  */
 export function goldenPath(): Workflow {
@@ -47,14 +47,14 @@ export function goldenPath(): Workflow {
         agentId: 'opencode',
         toolProfile: 'lean',
         workspace: 'readonly',
-        // Cannot write, by capability rather than by instruction.
+        // Cannot write, by mode rather than by instruction.
         mode: 'explore',
         prompt:
           'Read the story and the code it refers to. Describe what needs to ' +
           'change and why. Your reply is the design note.',
         inputs: [],
         output: 'design',
-        // Written by the runtime, so the analyst never needs write capability.
+        // Written by the runtime, so the analyst never needs write access.
         artifactPath: 'design.md',
         effects: {
           reads: [{ kind: 'repo', path: '**' }],
@@ -166,7 +166,7 @@ export function goldenPath(): Workflow {
       {
         id: 'open-pr',
         type: 'tool',
-        // Stubbed in v1; M6 wires this through the capability router to GitHub.
+        // Stubbed in v1; M6 wires this through the tool router to GitHub.
         command: 'echo "PR would open here"',
         output: 'pr',
         effects: { reads: [{ kind: 'repo', path: '**' }], writes: [{ kind: 'external' }], emits: ['pr'] },

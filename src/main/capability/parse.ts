@@ -44,11 +44,29 @@ export interface CapabilityPointer {
   source?: string
 }
 
+/**
+ * One occurrence of a capability in one document, recorded before dedup.
+ *
+ * The forest is flat and merges every manifest, which deliberately erases who
+ * declared what. That erasure is right for resolution and wrong for exactly one
+ * question: can a reader that starts at the root ledger *find* this node? The
+ * answer lives in whether the parent's manifest carries a stanza for it, and
+ * nothing downstream of the merge can still see that.
+ */
+export interface Declaration {
+  id: string
+  source?: string
+  /** Set when this occurrence was an inline child, naming the container. */
+  inlineParent?: string
+}
+
 export interface ParseResult {
   capabilities: Capability[]
   /** Pointer files, which are NOT capabilities — see parsePointer. */
   pointers: CapabilityPointer[]
   issues: ParseIssue[]
+  /** Every occurrence, pre-dedup — see Declaration. */
+  declarations: Declaration[]
 }
 
 type Raw = Record<string, unknown>
@@ -144,7 +162,8 @@ function parseNode(
   out: Capability[],
   pointers: CapabilityPointer[],
   issues: ParseIssue[],
-  source?: string
+  source?: string,
+  declarations: Declaration[] = []
 ): void {
   if (!isRecord(raw)) {
     issues.push({ source, at, problem: 'expected a mapping' })
@@ -597,11 +616,15 @@ function parseNode(
   }
 
   out.push(capability)
+  // `parentId` is the *containing document's* node, not capability.parent — an
+  // inline child sets both, a top-level entry sets neither, and that difference
+  // is the whole signal.
+  declarations.push({ id, source, ...(parentId ? { inlineParent: parentId } : {}) })
 
   /* ------------------------------------------- inline, unmaterialized children */
 
   asArray(raw.children).forEach((child, index) => {
-    parseNode(child, `${at}.children[${index}]`, id, out, pointers, issues, source)
+    parseNode(child, `${at}.children[${index}]`, id, out, pointers, issues, source, declarations)
   })
 }
 
@@ -610,6 +633,7 @@ export function parseManifest(text: string, source?: string): ParseResult {
   const capabilities: Capability[] = []
   const pointers: CapabilityPointer[] = []
   const issues: ParseIssue[] = []
+  const declarations: Declaration[] = []
 
   let doc: unknown
   try {
@@ -618,12 +642,18 @@ export function parseManifest(text: string, source?: string): ParseResult {
     return {
       capabilities,
       pointers,
+      declarations,
       issues: [{ source, at: '', problem: `not valid YAML: ${(error as Error).message}` }]
     }
   }
 
   if (doc === undefined || doc === null) {
-    return { capabilities, pointers, issues: [{ source, at: '', problem: 'the manifest is empty' }] }
+    return {
+      capabilities,
+      pointers,
+      declarations,
+      issues: [{ source, at: '', problem: 'the manifest is empty' }]
+    }
   }
 
   // A manifest may be a single node or a list of roots; both appear in practice
@@ -636,11 +666,12 @@ export function parseManifest(text: string, source?: string): ParseResult {
       capabilities,
       pointers,
       issues,
-      source
+      source,
+      declarations
     )
   })
 
-  return { capabilities, pointers, issues }
+  return { capabilities, pointers, issues, declarations }
 }
 
 /**
@@ -657,16 +688,19 @@ export function parseManifests(
   capabilities: Capability[]
   pointers: CapabilityPointer[]
   issues: ParseIssue[]
+  declarations: Declaration[]
 } {
   const capabilities: Capability[] = []
   const pointers: CapabilityPointer[] = []
   const issues: ParseIssue[] = []
+  const declarations: Declaration[] = []
 
   for (const document of documents) {
     const result = parseManifest(document.text, document.source)
     capabilities.push(...result.capabilities)
     pointers.push(...result.pointers)
     issues.push(...result.issues)
+    declarations.push(...result.declarations)
   }
 
   // A node inlined in its parent and also present as its own materialized
@@ -724,5 +758,5 @@ export function parseManifests(
   }
 
   const deduped = [...merged.values()]
-  return { forest: forestOf(deduped), capabilities: deduped, pointers, issues }
+  return { forest: forestOf(deduped), capabilities: deduped, pointers, issues, declarations }
 }

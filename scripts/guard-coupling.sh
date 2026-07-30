@@ -100,4 +100,24 @@ else
   echo "✓ capability core is IO-free except load.ts"
 fi
 
+# 9. "Capability" means the domain object, nowhere else in the governance core.
+#
+# The word collided seven ways in this codebase; the worst was policy.ts
+# exporting capabilitiesOf() returning ToolClass[], which reads as though the
+# ACP gate knows about capability nodes. It does not, and must not. The mode
+# lattice is a lattice over modes; the domain object lives in src/main/capability.
+#
+# The exclusions below are the legitimate meanings, each named rather than a
+# blanket file exemption: ACP wire fields, the provider/contract types, and
+# runtime.ts's evidence stamp — which really does record the domain Capability a
+# run happened under, and is the one place in workflow/ that should say so.
+hits=$(grep -rniE "capabilit(y|ies)" src/main/acp src/main/workflow --include='*.ts' \
+  | grep -vi "agentCapabilities\|ProviderCapability\|ContractCapability\|CONTRACT_CAPABILITIES\|clientCapabilities\|promptCapabilities\|fs.*[Cc]apabilit" \
+  | grep -v "capabilityId\|capabilityPath\|capabilityStamp\|opts\.capability\|The Capability this evidence\|no capability was supplied\|capability?: {" || true)
+if [ -n "$hits" ]; then
+  echo "✗ 'capability' used for something other than the domain object:"; echo "$hits"; fail=1
+else
+  echo "✓ 'capability' is not overloaded in the acp/workflow core"
+fi
+
 exit $fail

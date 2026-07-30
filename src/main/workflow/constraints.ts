@@ -391,7 +391,7 @@ export function invalidationFrontier(workflow: Workflow, constraint: Constraint)
  * Enforcement covers writes the client mediates — `fs/write_text_file` passes
  * through the gate and is refused. A shell command is opaque: the client sees
  * `sh -c ...`, not the files it will touch. That is not a hole in this code so
- * much as a reason the capability lattice matters — a step pinned to `edit` has
+ * much as a reason the mode lattice matters — a step pinned to `edit` has
  * no terminal at all, so for that step the refusal is total. A step that needs
  * `verify` or `deliver` can still write through a command, and the honest thing
  * is to say so rather than to imply a guarantee this cannot make.

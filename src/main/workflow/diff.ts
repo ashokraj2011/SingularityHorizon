@@ -11,7 +11,7 @@ import { allNodes, type Workflow } from './ir'
  * comparable. Two workflows whose prompts are worded differently are the same
  * workflow. Two whose timeouts differ permit exactly the same actions and will
  * both be right or wrong for reasons no compiler could know. Two whose
- * capability modes differ are different workflows, however similar they read —
+ * modes differ are different workflows, however similar they read —
  * only that last kind changes what a run is allowed to do, so only that kind
  * has to be zero.
  */
@@ -20,7 +20,7 @@ export interface Difference {
   path: string
   expected: unknown
   actual: unknown
-  kind: 'capability' | 'budget' | 'prose'
+  kind: 'mode' | 'budget' | 'prose'
 }
 
 /** Fields where wording varies without changing what the workflow does. */
@@ -30,7 +30,7 @@ function classify(path: string): Difference['kind'] {
   const last = path.split('.').at(-1) ?? ''
   if (PROSE_FIELDS.has(last)) return 'prose'
   if (path.includes('budget')) return 'budget'
-  return 'capability'
+  return 'mode'
 }
 
 function compare(path: string, expected: unknown, actual: unknown, out: Difference[]): void {
@@ -90,7 +90,7 @@ export function diffWorkflows(expected: Workflow, actual: Workflow): Difference[
 
   for (const [id, node] of left) {
     if (!right.has(id)) {
-      out.push({ path: `node:${id}`, expected: node, actual: undefined, kind: 'capability' })
+      out.push({ path: `node:${id}`, expected: node, actual: undefined, kind: 'mode' })
       continue
     }
     // Loop bodies are compared through the id map, so comparing them again
@@ -104,7 +104,7 @@ export function diffWorkflows(expected: Workflow, actual: Workflow): Difference[
 
   for (const [id, node] of right) {
     if (!left.has(id)) {
-      out.push({ path: `node:${id}`, expected: undefined, actual: node, kind: 'capability' })
+      out.push({ path: `node:${id}`, expected: undefined, actual: node, kind: 'mode' })
     }
   }
 
@@ -117,8 +117,8 @@ export function diffWorkflows(expected: Workflow, actual: Workflow): Difference[
 }
 
 /** The differences that change what a run may do. These have to be zero. */
-export function capabilityOnly(differences: Difference[]): Difference[] {
-  return differences.filter((d) => d.kind === 'capability')
+export function modeOnly(differences: Difference[]): Difference[] {
+  return differences.filter((d) => d.kind === 'mode')
 }
 
 export function summarize(differences: Difference[]): string {

@@ -215,8 +215,8 @@ handle('agents:list', async () => {
 handle('adminPolicy:get', (workingDir?: string) => loadPolicy(workingDir))
 handle('theme:remember', (theme: 'dark' | 'light') => rememberTheme(theme))
 handle('capability:load', async (root: string) => {
-  const { forest, issues, sources, pointerSources, pointers } = await loadForest(root)
-  return buildCapabilityView(root, forest, pointers, issues, sources, pointerSources)
+  const { forest, issues, sources, pointerSources, pointers, declarations } = await loadForest(root)
+  return buildCapabilityView(root, forest, pointers, issues, sources, pointerSources, declarations)
 })
 handle('sgh:status', () => probeSgh())
 handle('capability:plan', async (root: string, draft: CapabilityDraft) => {

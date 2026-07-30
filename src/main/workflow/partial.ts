@@ -197,7 +197,7 @@ export function holesOf(draft: PartialWorkflow): Hole[] {
           out.push(hole(node.id, 'toolProfile', 'how much tool surface this step pays for'))
         }
         if (!node.mode) {
-          out.push(hole(node.id, 'mode', 'the capability ceiling for this step'))
+          out.push(hole(node.id, 'mode', 'the mode ceiling for this step'))
         }
         if (!node.workspace) out.push(hole(node.id, 'workspace', 'readonly, or its own worktree'))
         if (!node.prompt) out.push(hole(node.id, 'prompt', 'what this step instructs its agent to do'))

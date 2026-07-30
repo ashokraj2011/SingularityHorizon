@@ -14,7 +14,7 @@ import type { AgentRunner } from './runtime'
  * gets exactly its contextSlice and nothing else, and the session is disposed
  * the moment the step ends.
  *
- * Each step also pins its own capability mode and tool profile. An analyst runs
+ * Each step also pins its own mode and tool profile. An analyst runs
  * lean and `explore` — it cannot write, whatever it decides it would like to do
  * — while an implementer runs full and `edit`. That is the IR's per-step policy
  * becoming an actual constraint rather than a description.

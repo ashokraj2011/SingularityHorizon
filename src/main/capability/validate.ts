@@ -1,6 +1,6 @@
 import type { Capability, CapabilityForest } from './model'
 import { ancestryOf, childrenOf } from './model'
-import type { CapabilityPointer } from './parse'
+import type { CapabilityPointer, Declaration } from './parse'
 
 /**
  * Forest validation.
@@ -52,7 +52,10 @@ function componentIndex(forest: CapabilityForest): Map<string, { owner: string; 
   return index
 }
 
-export function validateForest(forest: CapabilityForest): ValidationResult {
+export function validateForest(
+  forest: CapabilityForest,
+  declarations?: Declaration[]
+): ValidationResult {
   const errors: ValidationError[] = []
   const elicitations: Elicitation[] = []
   const push = (capabilityId: string, problem: string): void => {
@@ -311,6 +314,62 @@ export function validateForest(forest: CapabilityForest): ValidationResult {
           `${ancestry.join(' / ')} holds it — the gate cannot be satisfied. ` +
           'Add a contact with that role, or change the gate.'
       })
+    }
+  }
+
+  /* ------------------------------------------- reachability (R19) */
+
+  // A materialized node whose parent's manifest carries no stanza for it has a
+  // ledger that nothing can find. Materialization is several writes across refs
+  // and is never atomic, so this is the state a crash between the ledger write
+  // and the stanza write leaves behind — and until now it validated clean.
+  //
+  // Reachability cannot be read off the forest. The merge is flat by design and
+  // erases who declared what, so this needs the pre-dedup declarations; without
+  // them the rule simply does not run rather than guessing.
+  //
+  // The guard below is the important part. A node is only judged when the
+  // parent's OWN manifest was among the documents read, because otherwise the
+  // absence of a stanza means "not scanned", not "not written" — and a rule that
+  // fires on a partial scan would make `valid` depend on how much of the org
+  // somebody happened to walk. That is the same reason reconcilePointers is not
+  // in here.
+  if (declarations) {
+    // One helper, used for both the set and the lookup. Building a composite key
+    // twice is how the two sides quietly stop matching.
+    const stanzaKey = (parentId: string, childId: string): string => `${parentId}\u0000${childId}`
+
+    const inlineUnder = new Set(
+      declarations
+        .filter((d) => d.inlineParent)
+        .map((d) => stanzaKey(d.inlineParent as string, d.id))
+    )
+    const readAsOwnDocument = new Set(
+      declarations.filter((d) => !d.inlineParent).map((d) => d.id)
+    )
+
+    for (const capability of forest.byId.values()) {
+      const parentId = capability.parent
+      if (!capability.ledger || !parentId) continue
+
+      const parent = forest.byId.get(parentId)
+      if (!parent) continue // already reported as a broken parent link
+
+      // A parent with no ledger of its own lives inside some ancestor's
+      // document, which we therefore read; a parent with a ledger was only read
+      // if it turned up as a top-level entry somewhere.
+      const parentManifestWasRead = !parent.ledger || readAsOwnDocument.has(parentId)
+      if (!parentManifestWasRead) continue
+
+      if (!inlineUnder.has(stanzaKey(parentId, capability.id))) {
+        push(
+          capability.id,
+          `has its own ledger but no stanza in ${parentId}'s manifest — nothing that reads ` +
+            `${parentId} can find it, so the node is unreachable. This is what a materialization ` +
+            'that wrote the ledger and failed the parent stanza leaves behind; re-run the parent ' +
+            'stanza step to repair it.'
+        )
+      }
     }
   }
 

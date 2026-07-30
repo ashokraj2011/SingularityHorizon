@@ -513,7 +513,7 @@ export interface CapabilityView {
 export type ToolClass = 'terminal' | 'fs.write' | 'fs.read'
 
 /**
- * The capability lattice a session runs under. Cumulative and ordered:
+ * The mode lattice a session runs under. Cumulative and ordered:
  * discuss < explore < plan < edit < verify < deliver.
  *
  * Distinct from the agent's own mode (Agent / Plan / Autopilot), which the

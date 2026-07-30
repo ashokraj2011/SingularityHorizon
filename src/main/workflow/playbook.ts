@@ -19,7 +19,7 @@ import type { SessionMode } from '../../shared/ipc'
 export interface RoleDefaults {
   agentId: string
   toolProfile: 'full' | 'no-mcp' | 'lean' | 'minimal'
-  /** The M1 capability ceiling. A role that only reads should not be able to write. */
+  /** The M1 mode ceiling. A role that only reads should not be able to write. */
   mode: SessionMode
   workspace: 'readonly' | 'isolatedWorktree'
   budget: Budget
@@ -39,7 +39,7 @@ export interface Playbook {
 export const DEFAULT_PLAYBOOK: Playbook = {
   version: 'org-playbook/2026.07',
   roles: {
-    // Reads and reasons. Cheap agent, minimal tool surface, and no capability
+    // Reads and reasons. Cheap agent, minimal tool surface, and no ability
     // to write whatever it decides it would like to.
     analyst: {
       agentId: 'opencode',

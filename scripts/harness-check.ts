@@ -9,7 +9,7 @@
  *
  * The property that matters most: the harness never touches the machine
  * itself. Every read, write and command is a call back to the client, so
- * workspace containment and the capability lattice apply to Event Horizon's own
+ * workspace containment and the mode lattice apply to Event Horizon's own
  * agent exactly as they apply to a third party's. That is asserted directly, by
  * pinning the session to a mode that forbids the tool and watching it be
  * refused.
