@@ -55,7 +55,8 @@
     "build:harness": "esbuild src/harness/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=out/harness/index.mjs --log-level=error",
     "harness:check": "npm run build:harness && esbuild scripts/harness-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/harness-check.mjs --log-level=error && node out/harness-check.mjs",
     "endpoints:check": "esbuild scripts/endpoints-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/endpoints-check.mjs --log-level=error && node out/endpoints-check.mjs",
-    "capability:check": "esbuild scripts/capability-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-check.mjs --log-level=error && node out/capability-check.mjs"
+    "capability:check": "esbuild scripts/capability-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-check.mjs --log-level=error && node out/capability-check.mjs",
+    "capability": "esbuild scripts/capability-cli.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-cli.mjs --log-level=error && node out/capability-cli.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0",

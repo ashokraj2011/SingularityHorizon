@@ -244,7 +244,46 @@ Resolution happens host-side. What crosses into the session layer is a flat `Ses
 gate already enforces, plus a capability id for stamping — nothing below that line knows a tree
 exists.
 
-`npm run capability:check` (83 assertions) targets the correctness risk rather than coverage: single
+### Adding one
+
+Write a stanza in the owning node's `capability.yaml`. A child stays inline in its parent until it
+owns something of its own — an approval, a receipt head, a workflow, or a budget — at which point it
+materializes into its own ledger repo:
+
+```yaml
+id: payments
+kind: business
+ledger: { url: "github.com/org/payments-ledger" }
+policy:
+  requiredGates: [{ on: deliver, role: architect, scope: cross-capability }]
+  budgets: { maxCostUsdPerThread: 50 }
+  terminalAllowList: [npm test, npm run lint, git push]
+children:
+  - id: payments.retry-engine        # inline until it owns something
+    kind: delivery
+    repos:
+      - { repoId: retry-svc, url: "github.com/org/retry-svc", defaultBase: main, writePolicy: open }
+    consumes:
+      - { provider: platform.contracts, component: payments-api-v2 }
+```
+
+Then check it:
+
+```bash
+npm run capability -- <dir> --tree
+npm run capability -- <dir> --resolve payments.retry-engine
+npm run capability -- <dir> --cost payments.retry-engine,platform.contracts
+```
+
+`--resolve` shows the effective policy with provenance for every rule, so a gate you did not add is
+traceable to the ancestor that did. `--cost` reports the lowest common ancestor's depth: siblings are
+routine, and capabilities that meet only near a root are the changes an architect gate is for.
+
+The CLI is deliberately **read-only**. Writing manifests, materializing ledgers and stamping the
+creation commit are §9.2 and belong to `sgh`, where the approval machinery already lives — a second
+tool that also writes ledgers is how two sources of truth start.
+
+`npm run capability:check` (92 assertions) targets the correctness risk rather than coverage: single
 ownership checked across the whole forest, since the failure is invisible from inside either
 claimant; monotonicity asserted as a property over *every* node, because a child that can end up
 looser means one of the four fold operations is wrong; and every ancestry answer checked against a

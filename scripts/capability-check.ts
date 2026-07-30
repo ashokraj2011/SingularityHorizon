@@ -18,6 +18,11 @@
  *
  * Run with: npm run capability:check
  */
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { loadForest } from '../src/main/capability/load'
 import { parseManifest, parseManifests } from '../src/main/capability/parse'
 import {
   ancestryOf,
@@ -486,6 +491,46 @@ const drifted = parseManifests([
 ])
 ok('a drifted inline copy is reported',
    drifted.issues.some((i) => i.problem.includes('drifted')))
+
+/* ------------------------------------------------- loading from disk */
+
+// The pure core has no idea a filesystem exists; load.ts is the only file in the
+// directory that does. Tested here so that separation stays real rather than
+// being a claim in a comment.
+const dir = mkdtempSync(join(tmpdir(), 'eh-cap-'))
+mkdirSync(join(dir, 'a-ledger'), { recursive: true })
+mkdirSync(join(dir, 'nested', 'b-ledger'), { recursive: true })
+mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true })
+writeFileSync(
+  join(dir, 'a-ledger', 'capability.yaml'),
+  'id: a\nkind: business\nledger: { url: u }\nchildren: [{ id: a.svc, kind: delivery }]'
+)
+writeFileSync(
+  join(dir, 'nested', 'b-ledger', 'capability.yaml'),
+  'id: b\nkind: business\nledger: { url: u }'
+)
+// A manifest inside node_modules is someone else's package, not our forest.
+writeFileSync(join(dir, 'node_modules', 'pkg', 'capability.yaml'), 'id: nope\nkind: business')
+
+const loaded = await loadForest(dir)
+ok('manifests are discovered by walking', loaded.sources.length === 2, loaded.sources.join(', '))
+ok('nested ledgers are found', loaded.forest.byId.has('b'))
+ok('inline children come along', loaded.forest.byId.has('a.svc'))
+ok('node_modules is not walked', !loaded.forest.byId.has('nope'))
+ok('the loaded forest validates', validateForest(loaded.forest).valid)
+
+// A caller pointing at one ledger repo usually means that one manifest.
+const single = await loadForest(join(dir, 'a-ledger', 'capability.yaml'))
+ok('a single manifest can be named directly', single.forest.byId.size === 2)
+
+const missing = await loadForest(join(dir, 'nowhere'))
+ok('a missing directory reports rather than throws',
+   missing.issues.some((i) => i.problem.includes('no such directory')))
+ok('and yields an empty forest', missing.forest.byId.size === 0)
+
+const emptyDir = mkdtempSync(join(tmpdir(), 'eh-cap-empty-'))
+ok('a directory with no manifests is not an error',
+   (await loadForest(emptyDir)).issues.length === 0)
 
 console.log('--- results ---')
 let failed = 0
