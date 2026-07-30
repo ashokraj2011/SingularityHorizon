@@ -157,7 +157,11 @@ export function buildCapabilityView(
               forbids: c.forbids,
               selector: c.selector.path
                 ? `${c.selector.kind} ${c.selector.path}`
-                : c.selector.kind
+                : c.selector.kind,
+              // What the person wrote. A governance row reads better as "no
+              // schema writes before the Q3 freeze" than as "writes db.schema",
+              // and the typed selector is still there for the machine.
+              text: c.text
             }))
           }
         : undefined,

@@ -489,7 +489,7 @@ export interface CapabilityViewNode {
     budgets: Array<{ field: string; value: number; from: string[] }>
     terminalAllowList?: string[]
     allowListFrom: string[]
-    constraints: Array<{ id: string; forbids: string; selector: string }>
+    constraints: Array<{ id: string; forbids: string; selector: string; text: string }>
   }
   errors: string[]
   /** Elicitations — questions, not failures. */

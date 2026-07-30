@@ -2,6 +2,18 @@ import { useEffect, useState } from 'react'
 
 import type { CapabilityView, CapabilityViewNode } from '@shared/ipc'
 import { getApi } from '../api'
+import {
+  ComponentIcon,
+  ConsumesIcon,
+  KindIcon,
+  KnowledgeIcon,
+  LeadIcon,
+  LedgerIcon,
+  OwnersIcon,
+  PointerIcon,
+  PolicyIcon,
+  RepoIcon
+} from './CapabilityIcons'
 
 /**
  * The Capability Navigator — §7.1, read side.
@@ -106,25 +118,43 @@ export function CapabilityPanel({
                   {view.pointerSources.length > 0 &&
                     ` · ${view.pointerSources.length} pointer${view.pointerSources.length === 1 ? '' : 's'}`}
                 </div>
-                {view.nodes.map((n) => (
-                  <button
-                    key={n.id}
-                    className={`cap-row ${selected === n.id ? 'on' : ''}`}
-                    style={{ paddingLeft: 10 + n.depth * 14 }}
-                    onClick={() => setSelected(n.id)}
-                  >
-                    <span className="cap-row-name">{n.name ?? n.id}</span>
-                    {/* Materialization is visible, not explained (§7.1). */}
-                    {n.ledger && <span className="cap-dot" title={n.ledger.label} />}
-                    {n.errors.length > 0 && <span className="cap-flag error">!</span>}
-                    {n.errors.length === 0 && n.questions.length > 0 && (
-                      <span className="cap-flag warn">?</span>
-                    )}
-                  </button>
-                ))}
+                {view.nodes.map((n) => {
+                  const hasChildren = view.nodes.some((c) => c.parent === n.id)
+                  return (
+                    <button
+                      key={n.id}
+                      className={`cap-row ${selected === n.id ? 'on' : ''} ${n.kind}`}
+                      style={{ paddingLeft: 8 + n.depth * 15 }}
+                      onClick={() => setSelected(n.id)}
+                      title={n.id}
+                    >
+                      {/* A chevron only where there is something under it. */}
+                      {/* Always rendered so every row has identical structure. */}
+                      <span className={`cap-chev ${hasChildren ? '' : 'empty'}`}>⌄</span>
+                      <span className={`cap-row-icon ${n.kind}`}>
+                        <KindIcon kind={n.kind} />
+                      </span>
+                      <span className="cap-row-name">{n.name ?? n.id}</span>
+                      {/* Materialization is visible, not explained (§7.1). */}
+                      {n.ledger && <span className="cap-dot" title={n.ledger.label} />}
+                      {n.errors.length > 0 && <span className="cap-flag error">!</span>}
+                      {n.errors.length === 0 && n.questions.length > 0 && (
+                        <span className="cap-flag warn">?</span>
+                      )}
+                    </button>
+                  )
+                })}
+
+                {/* Present because the spec's navigator has it, disabled because
+                    creating a capability is an sgh command, not a form post. */}
+                <button className="cap-add" disabled title="Arrives with the sgh command bus">
+                  Add capability ↗
+                </button>
               </div>
 
-              <div className="cap-detail">{node ? <Detail node={node} /> : null}</div>
+              <div className="cap-detail">
+                {node ? <Detail node={node} nodes={view.nodes} /> : null}
+              </div>
             </div>
           )}
 
@@ -163,44 +193,126 @@ export function CapabilityPanel({
   )
 }
 
+/** A titled group. Every section names where its rows came from (§7.1). */
 function Section({
   title,
   source,
+  icon,
   children
 }: {
   title: string
   source: string
+  icon: React.ReactNode
   children: React.ReactNode
 }): React.JSX.Element {
   return (
     <div className="cap-section">
       <div className="cap-section-head">
-        {title}
-        {/* Every section names its source — §7.1's table, kept honest. */}
+        <span className="cap-section-title">
+          {icon}
+          {title}
+        </span>
         <span className="cap-source">{source}</span>
       </div>
-      {children}
+      <div className="cap-rows">{children}</div>
     </div>
   )
 }
 
-function Detail({ node }: { node: CapabilityViewNode }): React.JSX.Element {
+/**
+ * One key/value row.
+ *
+ * Key on the left, value on the right, in its own bordered row. Uniform because
+ * every section is answering the same question — what is this, and where did it
+ * come from — and a different layout per section makes that harder to scan, not
+ * easier.
+ */
+function Row({
+  icon,
+  label,
+  detail,
+  value,
+  tone
+}: {
+  icon?: React.ReactNode
+  label: React.ReactNode
+  detail?: React.ReactNode
+  value?: React.ReactNode
+  tone?: 'error' | 'warn'
+}): React.JSX.Element {
+  return (
+    <div className={`cap-kv ${tone ?? ''}`}>
+      <span className="cap-k">
+        {icon}
+        <span className="cap-k-label">{label}</span>
+        {detail && <span className="cap-k-detail">{detail}</span>}
+      </span>
+      {value !== undefined && <span className="cap-v">{value}</span>}
+    </div>
+  )
+}
+
+const money = (n: number): string => `$${n.toLocaleString()}`
+
+/** "maxCostUsdPerThread: 40" reads worse than "Budget $40 per thread". */
+function budgetLabel(field: string, value: number): string {
+  if (field === 'maxCostUsdPerThread') return `Budget ${money(value)} per thread`
+  if (field === 'maxTokensPerStep') return `Token cap ${value.toLocaleString()} per step`
+  return `${field}: ${value.toLocaleString()}`
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function Detail({
+  node,
+  nodes
+}: {
+  node: CapabilityViewNode
+  nodes: CapabilityViewNode[]
+}): React.JSX.Element {
+  const parent = nodes.find((n) => n.id === node.parent)
+
+  // The identity line: kind, where it sits, how much it owns, who owns it.
+  const identity = [
+    node.kind,
+    parent ? `under ${parent.name ?? parent.id}` : 'root',
+    node.repos.length ? `${node.repos.length} repo${node.repos.length === 1 ? '' : 's'}` : null,
+    node.contacts.length ? `owners: ${node.contacts.map((c) => c.actorId).join(', ')}` : null
+  ].filter(Boolean)
+
   return (
     <>
-      <div className="cap-title">
-        {node.name ?? node.id}
-        <span className={`cap-kind ${node.kind}`}>{node.kind}</span>
+      <div className="cap-head-row">
+        <div className="cap-title">{node.name ?? node.id}</div>
+        {node.ledger ? (
+          <div className="cap-chip" title={`${node.ledger.kind} ledger`}>
+            <LedgerIcon />
+            <span className="cap-chip-label">{node.ledger.label}</span>
+            <span className="cap-chip-kind">{node.ledger.kind}</span>
+          </div>
+        ) : (
+          <div className="cap-chip muted">
+            <LedgerIcon />
+            <span className="cap-chip-label">a stanza in its parent</span>
+          </div>
+        )}
       </div>
-      <div className="cap-path">{node.path}</div>
 
-      {node.ledger ? (
-        <div className="cap-chip">
-          <span className="cap-chip-label">ledger: {node.ledger.label}</span>
-          <span className="cap-chip-kind">{node.ledger.kind}</span>
-        </div>
-      ) : (
-        <div className="cap-chip muted">a stanza in its parent — no ledger yet</div>
-      )}
+      <div className="cap-identity">
+        {/* The delivery / business flag, carried as an icon so it reads at a
+            glance in both the tree and here. */}
+        <span className={`cap-flagpill ${node.kind}`}>
+          <KindIcon kind={node.kind} />
+          {node.kind}
+        </span>
+        {identity.slice(1).map((part, i) => (
+          <span key={i} className="cap-identity-part">
+            {part}
+          </span>
+        ))}
+      </div>
 
       {node.errors.map((problem, i) => (
         <div key={i} className="cap-note error">
@@ -219,146 +331,188 @@ function Detail({ node }: { node: CapabilityViewNode }): React.JSX.Element {
       ))}
 
       {node.repos.length > 0 && (
-        <Section title="Repos" source="manifest">
+        <Section title="Repos" source="manifest" icon={<RepoIcon />}>
           {node.repos.map((r) => (
-            <div key={r.repoId} className="cap-line">
-              <span className="cap-mono">{r.repoId}</span>
-              {r.role === 'lead' && <span className="cap-badge">lead</span>}
-              {r.writePolicy === 'gated' && <span className="cap-badge warn">gated</span>}
-              <span className="cap-dim">{r.url}</span>
-            </div>
+            <Row
+              key={r.repoId}
+              icon={<RepoIcon />}
+              label={r.repoId}
+              detail={r.url}
+              value={
+                <>
+                  {r.role === 'lead' && (
+                    <span className="cap-badge lead" title="Hosts the sidecar ledger">
+                      <LeadIcon />
+                      lead
+                    </span>
+                  )}
+                  {r.writePolicy === 'gated' && <span className="cap-badge warn">gated</span>}
+                  <span className="cap-mono dim">{r.defaultBase}</span>
+                </>
+              }
+            />
           ))}
         </Section>
       )}
 
       {node.components.length > 0 && (
-        <Section title="Components" source="capability.yaml + reconciler">
+        <Section
+          title="Components"
+          source="capability.yaml + reconciler"
+          icon={<ComponentIcon kind="service" />}
+        >
           {node.components.map((c) => (
-            <div key={c.id} className="cap-line">
-              <span className="cap-mono">{c.id}</span>
-              <span className={`cap-status ${c.status}`}>{c.status}</span>
-              <span className="cap-dim">
-                {c.kind}
-                {c.tech ? ` · ${c.tech}` : ''}
-                {c.observedBy.length ? ` · observed by ${c.observedBy.join(', ')}` : ''}
-                {!c.observedBy.length && c.declaredBy ? ` · declared by ${c.declaredBy}` : ''}
-              </span>
-            </div>
+            <Row
+              key={c.id}
+              icon={<ComponentIcon kind={c.kind} />}
+              label={
+                <>
+                  {c.id}
+                  {c.tech && <span className="cap-tech"> · {c.tech}</span>}
+                </>
+              }
+              detail={
+                c.observedBy.length
+                  ? `observed by ${c.observedBy.join(', ')}`
+                  : c.declaredBy
+                    ? `declared by ${c.declaredBy}`
+                    : undefined
+              }
+              value={<span className={`cap-status ${c.status}`}>{c.status}</span>}
+            />
           ))}
         </Section>
       )}
 
       {node.consumes.length > 0 && (
-        <Section title="Consumes" source="consumer edges">
+        <Section title="Consumes" source="consumer edges" icon={<ConsumesIcon />}>
           {node.consumes.map((e, i) => (
-            <div key={i} className="cap-line">
-              <span className="cap-mono">{e.provider}</span>
-              {e.component && <span className="cap-badge">{e.component}</span>}
-              {e.contract && <span className="cap-dim">{e.contract}</span>}
-            </div>
+            <Row
+              key={i}
+              icon={<ConsumesIcon />}
+              label={
+                e.component ? (
+                  <>
+                    {e.component} <span className="cap-tech">from {e.provider}</span>
+                  </>
+                ) : (
+                  e.provider
+                )
+              }
+              value={e.contract ? <span className="cap-mono dim">{e.contract}</span> : undefined}
+            />
           ))}
         </Section>
       )}
 
       {node.policy && (
-        <Section title="Effective policy" source="the fold, resolved host-side">
+        <Section
+          title="Effective policy"
+          source="the fold, resolved host-side"
+          icon={<PolicyIcon />}
+        >
           {node.policy.gates.map((g, i) => (
-            <div key={i} className="cap-line">
-              <span className="cap-mono">
-                {g.on} · {g.role}
-              </span>
-              {g.scope && <span className="cap-badge">{g.scope}</span>}
-              <span className="cap-prov">
-                {g.from === node.id ? 'declared here' : `inherited from ${g.from}`}
-              </span>
-            </div>
+            <Row
+              key={`g${i}`}
+              label={`${capitalize(g.role)} gate on ${g.on}`}
+              detail={g.scope}
+              value={g.from === node.id ? 'own gate' : `inherited from ${g.from}`}
+            />
           ))}
           {node.policy.budgets.map((b) => (
-            <div key={b.field} className="cap-line">
-              <span className="cap-mono">
-                {b.field}: {b.value}
-              </span>
-              {/* "min of digital $50, pzn $40" — a surprising number stays explicable. */}
-              <span className="cap-prov">
-                {b.from.length > 1 ? `min along ${b.from.join(', ')}` : `from ${b.from[0] ?? node.id}`}
-              </span>
-            </div>
+            <Row
+              key={b.field}
+              label={budgetLabel(b.field, b.value)}
+              /* "min of digital $50, pzn $40" — a surprising number stays explicable. */
+              value={
+                b.from.length > 1
+                  ? `min along ${b.from.map((f) => f.split('.').pop()).join(', ')}`
+                  : `from ${b.from[0]?.split('.').pop() ?? 'here'}`
+              }
+            />
           ))}
-          <div className="cap-line">
-            <span className="cap-mono">
-              terminal:{' '}
-              {node.policy.terminalAllowList
-                ? node.policy.terminalAllowList.join(', ') || '(nothing permitted)'
-                : 'unrestricted'}
-            </span>
-            <span className="cap-prov">
-              {node.policy.allowListFrom.length
-                ? `intersection of ${node.policy.allowListFrom.join(', ')}`
-                : 'no list declared on the path'}
-            </span>
-          </div>
+          <Row
+            label={
+              node.policy.terminalAllowList
+                ? `Terminal: ${node.policy.terminalAllowList.join(', ') || 'nothing permitted'}`
+                : 'Terminal: unrestricted'
+            }
+            value={
+              node.policy.allowListFrom.length
+                ? `intersection of ${node.policy.allowListFrom.map((f) => f.split('.').pop()).join(', ')}`
+                : 'no list on the path'
+            }
+          />
           {node.policy.constraints.map((c) => (
-            <div key={c.id} className="cap-line">
-              <span className="cap-mono">
-                {c.forbids} {c.selector}
-              </span>
-              <span className="cap-prov">{c.id}</span>
-            </div>
+            <Row
+              key={c.id}
+              label={capitalize(c.text)}
+              detail={`${c.forbids} ${c.selector}`}
+              value="own constraint"
+            />
           ))}
           {!node.policy.gates.length && !node.policy.budgets.length && (
-            <div className="cap-dim">Nothing inherited or declared.</div>
+            <Row label="Nothing inherited or declared" />
           )}
         </Section>
       )}
 
       {node.knowledge.length > 0 && (
-        <Section title="Knowledge" source="manifest (verifiedAt)">
+        <Section title="Knowledge" source="manifest (verifiedAt)" icon={<KnowledgeIcon />}>
           {node.knowledge.map((k, i) => (
-            <div key={i} className="cap-line">
-              <span className="cap-badge">{k.kind}</span>
-              <a href={k.url} className="cap-link" title={k.url}>
-                {k.title}
-              </a>
-              {k.verifiedAt && (
-                // Nags, never garbage-collects (§7.5).
-                <span className={`cap-prov ${k.stale ? 'warn' : ''}`}>
-                  verified {k.verifiedAt}
-                  {k.stale ? ' — worth re-checking' : ''}
-                </span>
-              )}
-            </div>
+            <Row
+              key={i}
+              icon={<KnowledgeIcon />}
+              label={
+                <a href={k.url} className="cap-link" title={k.url}>
+                  {k.title}
+                </a>
+              }
+              detail={k.kind}
+              /* Nags, never garbage-collects (§7.5). */
+              value={
+                k.verifiedAt ? (
+                  <span className={k.stale ? 'warn' : ''}>
+                    verified {k.verifiedAt}
+                    {k.stale ? ' — re-check' : ''}
+                  </span>
+                ) : undefined
+              }
+            />
           ))}
         </Section>
       )}
 
       {(node.contacts.length > 0 || node.tracker) && (
-        <Section title="Owners" source="manifest">
+        <Section title="Owners" source="manifest" icon={<OwnersIcon />}>
           {node.contacts.map((c, i) => (
-            <div key={i} className="cap-line">
-              <span className="cap-mono">{c.actorId}</span>
-              <span className="cap-badge">{c.role}</span>
-            </div>
+            <Row key={i} icon={<OwnersIcon />} label={c.actorId} value={c.role} />
           ))}
           {node.tracker && (
-            <div className="cap-line">
-              <span className="cap-mono">
-                {node.tracker.system}: {node.tracker.projectKey}
-              </span>
-            </div>
+            <Row label={`${node.tracker.system} project`} value={node.tracker.projectKey} />
           )}
         </Section>
       )}
 
       {node.pointerFindings.length > 0 && (
-        <Section title="Pointer files" source="member-repo back-references">
+        <Section title="Pointer files" source="member-repo back-references" icon={<PointerIcon />}>
           {node.pointerFindings.map((f, i) => (
-            <div key={i} className={`cap-line ${f.kind === 'repo-claimed-elsewhere' ? 'error' : ''}`}>
-              <span className="cap-mono">{f.repoId}</span>
-              <span className="cap-dim">{f.detail}</span>
-            </div>
+            <Row
+              key={i}
+              icon={<PointerIcon />}
+              label={f.repoId}
+              detail={f.detail}
+              tone={f.kind === 'repo-claimed-elsewhere' ? 'error' : undefined}
+            />
           ))}
         </Section>
       )}
+
+      {/* Named rather than omitted: it is in the spec's navigator, and the reason
+          it is empty is a missing reader, not a missing capability. */}
+      <Section title="Accepted outcomes" source="git log singularity/ledger" icon={<LedgerIcon />}>
+        <Row label="Needs the ledger reader — receipts land with the sgh state lifecycle" />
+      </Section>
     </>
   )
 }

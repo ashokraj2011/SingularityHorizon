@@ -1896,10 +1896,17 @@ textarea {
 .cap-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   width: 100%;
   text-align: left;
-  padding: 5px 8px;
+  /* Vertical padding stated separately so an inline paddingLeft cannot disturb
+     it, and a fixed height so no row can grow on its content. A tree where rows
+     are different heights reads as broken before anyone reads the words. */
+  padding-block: 0;
+  padding-inline: 8px;
+  height: 28px;
+  box-sizing: border-box;
+  overflow: hidden;
   border-radius: 6px;
   font-size: 12.5px;
   color: var(--text-dim);
@@ -2012,8 +2019,63 @@ textarea {
   flex: none;
 }
 
+.cap-icon {
+  flex: none;
+  opacity: 0.75;
+}
+
+.cap-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cap-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.cap-identity-part:not(:last-child)::after {
+  content: ' ·';
+  color: var(--text-faint);
+}
+
+/* The delivery / business flag. Icon plus word, so it reads at a glance and
+   still says which is which. */
+.cap-flagpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.cap-flagpill.delivery {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.cap-flagpill.business {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 45%, transparent);
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
+}
+
 .cap-section {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .cap-section-head {
@@ -2022,67 +2084,118 @@ textarea {
   justify-content: space-between;
   gap: 10px;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   color: var(--text-faint);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 5px;
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 
-/* Every section names where it came from. */
-.cap-source {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 10.5px;
-  opacity: 0.75;
-}
-
-.cap-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 4px 0;
+.cap-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
-  flex-wrap: wrap;
+  color: var(--text-dim);
 }
 
-.cap-line.error .cap-mono {
-  color: var(--red);
+.cap-source {
+  font-size: 10.5px;
+  opacity: 0.8;
 }
 
-.cap-mono {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
+.cap-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.cap-dim {
-  color: var(--text-faint);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
+/* Bordered rows, not a card grid (§7.5). */
+.cap-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  min-width: 0;
 }
 
-.cap-prov {
-  margin-left: auto;
+.cap-kv.error {
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+}
+
+.cap-kv.warn {
+  border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+}
+
+.cap-k {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cap-k-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-k-detail {
   font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cap-v {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 11.5px;
   color: var(--text-faint);
   white-space: nowrap;
 }
 
-.cap-prov.warn {
+.cap-v .warn {
   color: var(--yellow);
 }
 
+.cap-tech {
+  color: var(--text-faint);
+}
+
+.cap-mono {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.cap-mono.dim {
+  color: var(--text-faint);
+}
+
 .cap-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
   border: 1px solid var(--border);
   color: var(--text-dim);
+}
+
+.cap-badge.lead {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .cap-badge.warn {
@@ -2094,7 +2207,7 @@ textarea {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
 }
@@ -2102,17 +2215,20 @@ textarea {
 .cap-status.confirmed {
   color: var(--green);
   border-color: color-mix(in srgb, var(--green) 45%, transparent);
+  background: color-mix(in srgb, var(--green) 13%, transparent);
 }
 
 .cap-status.proposed {
   color: var(--yellow);
   border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+  background: color-mix(in srgb, var(--yellow) 13%, transparent);
 }
 
 .cap-status.stale,
 .cap-status.contradicted {
   color: var(--red);
   border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 
 .cap-link {
@@ -2160,4 +2276,50 @@ textarea {
 .cap-chip-label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.cap-chev {
+  width: 10px;
+  height: 14px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Hidden, not absent — a leaf and a branch must occupy the same box or the
+   alignment down the tree drifts. */
+.cap-chev.empty {
+  visibility: hidden;
+}
+
+.cap-row-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-faint);
+}
+
+.cap-row-icon.delivery {
+  color: var(--accent);
+}
+
+.cap-row-icon.business {
+  color: var(--blue);
+}
+
+.cap-row.on .cap-row-icon {
+  opacity: 1;
+}
+
+.cap-add {
+  margin-top: 12px;
+  width: 100%;
+  padding: 8px 0;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-faint);
+  cursor: not-allowed;
 }
