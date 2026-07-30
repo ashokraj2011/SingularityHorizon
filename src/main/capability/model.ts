@@ -31,6 +31,16 @@ export interface RepoRef {
    * grant — the M1 lattice, applied per repo rather than per session.
    */
   writePolicy: 'open' | 'gated'
+  /**
+   * Exactly one lead per delivery capability. The lead is *defined* as the repo
+   * whose sidecar branch hosts the ledger, which is what stops this being a
+   * decorative label.
+   *
+   * Total in the type rather than optional, matching `writePolicy` and
+   * `Component.status`: the parser supplies the default so that only the parser
+   * has to reason about absence.
+   */
+  role: 'lead' | 'member'
 }
 
 export interface ContractRef {
@@ -91,9 +101,67 @@ export interface Component {
   }
 }
 
-export interface LedgerRef {
+/**
+ * The ref a sidecar ledger lives on.
+ *
+ * A protocol constant, not a preference — every tool that reads a ledger looks
+ * here, so a manifest naming a different ref is an incompatibility rather than a
+ * choice. Literal-typed for that reason.
+ */
+export const SIDECAR_LEDGER_REF = 'refs/heads/singularity/ledger'
+
+/**
+ * Where a materialized node keeps its ledger.
+ *
+ * Delivery capabilities use a `sidecar` orphan branch in their lead repo, so
+ * state and code share one Merkle DAG and a pin resolves with `git show` in the
+ * same clone. Business capabilities have no code repo to sidecar and get a
+ * standalone `repo`, which also puts access control for funding numbers outside
+ * any code repository's read permissions.
+ *
+ * `sidecar.repo` holds a **repoId**, not a URL. It is the same key single
+ * ownership is checked on, so "the capability must own it" is a set lookup
+ * rather than URL normalisation — ssh versus https, trailing `.git`, case.
+ */
+export type LedgerRef =
+  | { kind: 'sidecar'; repo: string; ref: typeof SIDECAR_LEDGER_REF }
+  | { kind: 'repo'; url: string; defaultBase?: string }
+
+export type KnowledgeKind = 'design' | 'runbook' | 'adr' | 'api-portal' | 'wiki' | 'other'
+
+/** Declared documentation. Never scanned — a link nobody wrote down is not one. */
+export interface KnowledgeRef {
+  kind: KnowledgeKind
+  title: string
   url: string
-  defaultBase?: string
+  /** contextSlice vocabulary: `{kind:'knowledge', tags:['design']}`. */
+  tags?: string[]
+  /**
+   * Staleness is surfaced, never garbage-collected.
+   *
+   * A date string rather than the epoch numbers used elsewhere in this model,
+   * following the spec. Worth knowing that it is weaker than it looks: a
+   * document can be edited without this changing, so it records when somebody
+   * last looked, not whether the content still holds.
+   */
+  verifiedAt?: string
+}
+
+/**
+ * An owner or escalation contact.
+ *
+ * `role` shares a namespace with `GateRule.role`: a gate is satisfiable at a
+ * node when some contact on the root→node path holds its role. Unsatisfiable
+ * gates elicit rather than fail — see validate.ts.
+ */
+export interface Contact {
+  actorId: string
+  role: string
+}
+
+export interface TrackerRef {
+  system: 'jira'
+  projectKey: string
 }
 
 export interface Capability {
@@ -109,6 +177,9 @@ export interface Capability {
   policy?: PolicyFragment
   consumes?: ConsumerEdge[]
   components?: Component[]
+  knowledge?: KnowledgeRef[]
+  contacts?: Contact[]
+  tracker?: TrackerRef
 }
 
 /**

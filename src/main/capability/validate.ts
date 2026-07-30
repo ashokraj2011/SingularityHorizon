@@ -1,5 +1,6 @@
 import type { Capability, CapabilityForest } from './model'
 import { ancestryOf, childrenOf } from './model'
+import type { CapabilityPointer } from './parse'
 
 /**
  * Forest validation.
@@ -131,6 +132,87 @@ export function validateForest(forest: CapabilityForest): ValidationResult {
       }
       componentIds.add(component.id)
     }
+
+    // Dedupe on the pair: one person legitimately holds two roles.
+    const contactKeys = new Set<string>()
+    for (const contact of capability.contacts ?? []) {
+      const key = `${contact.actorId}|${contact.role}`
+      if (contactKeys.has(key)) {
+        push(capability.id, `${contact.actorId} is listed twice as ${contact.role}`)
+      }
+      contactKeys.add(key)
+    }
+
+    /* --------------------------------------------- the lead repo (R14) */
+
+    // Scoped to delivery nodes that actually own repos. A delivery node with no
+    // repos is legal and common — plenty are governed entirely by an ancestor —
+    // and an unscoped rule would fail most real forests.
+    if (capability.kind === 'delivery' && (capability.repos?.length ?? 0) > 0) {
+      const leads = capability.repos!.filter((r) => r.role === 'lead')
+      if (leads.length === 0) {
+        push(
+          capability.id,
+          'owns repos but names no lead — the ledger is an orphan branch inside the lead repo, ' +
+            `so exactly one is needed. Candidates: ${capability.repos!.map((r) => r.repoId).join(', ')}`
+        )
+      } else if (leads.length > 1) {
+        push(
+          capability.id,
+          `names ${leads.length} leads (${leads.map((r) => r.repoId).join(', ')}) — ` +
+            'the ledger has one home, so exactly one repo can be the lead'
+        )
+      }
+    }
+
+    /* ------------------------------------------- ledger placement (R15/R16/E3) */
+
+    if (capability.ledger?.kind === 'sidecar') {
+      if (capability.kind === 'business') {
+        // Checked before R15 so one wrong line yields one error: a business node
+        // owns no repos, so "does not own that repo" is true but useless here.
+        push(
+          capability.id,
+          'is a business capability with a sidecar ledger — it owns no repo to put the branch in. ' +
+            'Use a standalone ledger repo (kind: repo).'
+        )
+      } else {
+        const sidecarRepo = capability.ledger.repo
+        const owned = capability.repos?.find((r) => r.repoId === sidecarRepo)
+        if (!owned) {
+          push(
+            capability.id,
+            `its sidecar ledger lives in "${sidecarRepo}", which this capability does not own — ` +
+              'writing there would cross the boundary single ownership exists to forbid'
+          )
+        } else {
+          const leads = (capability.repos ?? []).filter((r) => r.role === 'lead')
+          // Only meaningful when the lead is unambiguous; R14 has already fired
+          // otherwise, and "must be the lead (there is no lead)" is a worse message.
+          if (leads.length === 1 && leads[0].repoId !== sidecarRepo) {
+            push(
+              capability.id,
+              `its sidecar ledger lives in "${sidecarRepo}" but the lead is "${leads[0].repoId}" — ` +
+                'either point the ledger at the lead, or move role: lead to that repo'
+            )
+          }
+        }
+      }
+    }
+
+    if (capability.kind === 'delivery' && capability.ledger?.kind === 'repo') {
+      // An elicitation, not an error. This contradicts a convention rather than
+      // a rule: the receipts exist, they are reachable, the governance record
+      // works. Failing it would demand relocating git history to satisfy a
+      // validator.
+      elicitations.push({
+        capabilityId: capability.id,
+        about: 'ledger placement',
+        question:
+          'This delivery capability keeps a standalone ledger repo rather than a sidecar branch ' +
+          'in its lead. Is that a pre-convention ledger to migrate, or a deliberate exception?'
+      })
+    }
   }
 
   /* ------------------------------------------------------ the consumer graph */
@@ -196,7 +278,129 @@ export function validateForest(forest: CapabilityForest): ValidationResult {
     }
   }
 
+  /* --------------------------------------- gate satisfiability (R18) */
+
+  // `Contact.role` and `GateRule.role` share one namespace: a gate is
+  // satisfiable at a node when some contact on the root→node path holds its
+  // role. An unsatisfiable gate elicits rather than fails, for the same reason
+  // components do — an incomplete manifest should not fail a forest, and failing
+  // it would push people to add placeholder contacts to quiet the validator.
+  //
+  // Worth knowing what this binding implies: editing `contacts` changes who may
+  // approve. That is mitigated, not removed, by the manifest PR itself being
+  // gated by CODEOWNERS on the parent ledger.
+  for (const capability of forest.byId.values()) {
+    const ancestry = ancestryOf(forest, capability.id)
+    if (!ancestry) continue
+
+    const rolesOnPath = new Set<string>()
+    for (const id of ancestry) {
+      for (const contact of forest.byId.get(id)?.contacts ?? []) rolesOnPath.add(contact.role)
+    }
+
+    // Only the gates this node actually declares — an inherited gate is reported
+    // against the ancestor that declared it, once, rather than at every
+    // descendant.
+    for (const gate of capability.policy?.requiredGates ?? []) {
+      if (!gate.role.trim() || rolesOnPath.has(gate.role)) continue
+      elicitations.push({
+        capabilityId: capability.id,
+        about: `gate ${gate.on}/${gate.role}`,
+        question:
+          `The gate on "${gate.on}" needs role "${gate.role}", but no contact on ` +
+          `${ancestry.join(' / ')} holds it — the gate cannot be satisfied. ` +
+          'Add a contact with that role, or change the gate.'
+      })
+    }
+  }
+
   return { valid: errors.length === 0, errors, elicitations }
+}
+
+/* ------------------------------------------------------- pointer reconciliation */
+
+export type PointerFindingKind =
+  | 'unknown-capability'
+  | 'unknown-repo'
+  | 'points-at-lead'
+  | 'repo-claimed-elsewhere'
+
+export interface PointerFinding {
+  kind: PointerFindingKind
+  pointer: CapabilityPointer
+  detail: string
+}
+
+/**
+ * Compare member-repo pointers against the forest.
+ *
+ * Deliberately outside `validateForest`. That function's contract is "this
+ * forest is internally consistent", and a dangling pointer may mean a stale
+ * pointer *or* a partial scan — scanning one member repo produces an empty
+ * forest and a dangling pointer by construction. Folding this in would make
+ * `valid` depend on how much of the org somebody happened to walk.
+ *
+ * So findings come back as data with a kind, and the caller — which knows what
+ * was scanned — decides severity.
+ */
+export function reconcilePointers(
+  forest: CapabilityForest,
+  pointers: CapabilityPointer[]
+): PointerFinding[] {
+  const findings: PointerFinding[] = []
+
+  // Single ownership seen from the repo side. This catches the case the
+  // manifest-side rule structurally cannot: the second claimant's manifest was
+  // never scanned, so the forest has no idea there is a conflict.
+  const byRepo = new Map<string, CapabilityPointer[]>()
+  for (const pointer of pointers) {
+    byRepo.set(pointer.repoId, [...(byRepo.get(pointer.repoId) ?? []), pointer])
+  }
+  for (const [repoId, claims] of byRepo) {
+    const capabilities = [...new Set(claims.map((c) => c.capability))]
+    if (capabilities.length < 2) continue
+    for (const pointer of claims) {
+      findings.push({
+        kind: 'repo-claimed-elsewhere',
+        pointer,
+        detail: `repo "${repoId}" is pointed at ${capabilities.join(' and ')} — one of them is stale`
+      })
+    }
+  }
+
+  for (const pointer of pointers) {
+    const owner = forest.byId.get(pointer.capability)
+    if (!owner) {
+      findings.push({
+        kind: 'unknown-capability',
+        pointer,
+        detail: `points at "${pointer.capability}", which is not in the scanned forest — the scan may be partial`
+      })
+      continue
+    }
+
+    const repo = owner.repos?.find((r) => r.repoId === pointer.repoId)
+    if (!repo) {
+      findings.push({
+        kind: 'unknown-repo',
+        pointer,
+        detail: `"${pointer.capability}" declares no repo "${pointer.repoId}" — the pointer is stale`
+      })
+      continue
+    }
+
+    if (repo.role === 'lead') {
+      findings.push({
+        kind: 'points-at-lead',
+        pointer,
+        detail:
+          `"${pointer.repoId}" is the lead repo, which carries the real manifest in its sidecar ` +
+          'ledger rather than a pointer'
+      })
+    }
+  }
+
+  return findings
 }
 
 /**
@@ -237,6 +441,11 @@ export function emptyNodes(forest: CapabilityForest): string[] {
         !c.policy &&
         !c.consumes?.length &&
         !c.components?.length &&
+        // A node with curated links and named owners HAS grown past the import,
+        // and reporting it as empty is a false signal.
+        !c.knowledge?.length &&
+        !c.contacts?.length &&
+        !c.tracker &&
         childrenOf(forest, c.id).length === 0
     )
     .map((c) => c.id)

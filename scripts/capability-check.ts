@@ -24,6 +24,8 @@ import { join } from 'node:path'
 
 import { loadForest } from '../src/main/capability/load'
 import { parseManifest, parseManifests } from '../src/main/capability/parse'
+import { SIDECAR_LEDGER_REF } from '../src/main/capability/model'
+import { reconcilePointers } from '../src/main/capability/validate'
 import {
   ancestryOf,
   depthOf,
@@ -31,7 +33,8 @@ import {
   lowestCommonAncestor,
   pathOf,
   rootsOf,
-  type Capability
+  type Capability,
+  type CapabilityForest
 } from '../src/main/capability/model'
 import {
   emptyNodes,
@@ -149,7 +152,7 @@ const withProvider = forestOf([
     kind: 'delivery',
     parent: 'platform',
     repos: [
-      { repoId: 'shared-contracts', url: 'u', defaultBase: 'main', writePolicy: 'gated' }
+      { repoId: 'shared-contracts', url: 'u', defaultBase: 'main', writePolicy: 'gated', role: 'lead' }
     ]
   }
 ])
@@ -166,13 +169,13 @@ const dualOwnership = forestOf([
     id: 'platform.contracts',
     kind: 'delivery',
     parent: 'platform',
-    repos: [{ repoId: 'shared-contracts', url: 'u', defaultBase: 'main', writePolicy: 'gated' }]
+    repos: [{ repoId: 'shared-contracts', url: 'u', defaultBase: 'main', writePolicy: 'gated', role: 'lead' }]
   },
   {
     id: 'payments.other',
     kind: 'delivery',
     parent: 'payments',
-    repos: [{ repoId: 'shared-contracts', url: 'u', defaultBase: 'main', writePolicy: 'open' }]
+    repos: [{ repoId: 'shared-contracts', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' }]
   }
 ])
 const dual = validateForest(dualOwnership)
@@ -193,7 +196,7 @@ ok('a missing parent is refused',
    invalid([{ id: 'a', kind: 'delivery', parent: 'ghost' }]).some((p) => p.includes('does not exist')))
 ok('a business node owning repos is refused',
    invalid([
-     { id: 'a', kind: 'business', repos: [{ repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open' }] }
+     { id: 'a', kind: 'business', repos: [{ repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' }] }
    ]).some((p) => p.includes('governance and rollup')))
 ok('a negative budget is refused',
    invalid([{ id: 'a', kind: 'business', policy: { budgets: { maxCostUsdPerThread: -1 } } }])
@@ -204,8 +207,8 @@ ok('a duplicate repo within one node is refused',
        id: 'a',
        kind: 'delivery',
        repos: [
-         { repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open' },
-         { repoId: 'r', url: 'u2', defaultBase: 'main', writePolicy: 'open' }
+         { repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' },
+         { repoId: 'r', url: 'u2', defaultBase: 'main', writePolicy: 'open', role: 'member' }
        ]
      }
    ]).some((p) => p.includes('twice')))
@@ -440,7 +443,7 @@ ok('a command outside the inherited list is refused',
 // EA map — the thing §3 and §10 exist to prevent.
 ok('owning a repo alone does not require materialization',
    pendingMaterialization(forestOf([
-     { id: 'a', kind: 'delivery', repos: [{ repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open' }] }
+     { id: 'a', kind: 'delivery', repos: [{ repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' }] }
    ])).length === 0)
 ok('a budget allocation does require it',
    pendingMaterialization(forestOf([
@@ -455,7 +458,7 @@ ok('a node that already has a ledger is not pending',
      {
        id: 'a',
        kind: 'business',
-       ledger: { url: 'u' },
+       ledger: { kind: 'repo', url: 'u' },
        policy: { budgets: { maxCostUsdPerThread: 5 } }
      }
    ])).length === 0)
@@ -479,8 +482,9 @@ const multi = parseManifests([
 ok('manifests merge into one forest', multi.forest.byId.size === 2)
 // During materialization a node is legitimately in both places; the one with the
 // ledger is the real one.
+const leafLedger = multi.forest.byId.get('leaf')?.ledger
 ok('the materialized copy wins over the inline stanza',
-   multi.forest.byId.get('leaf')?.ledger?.url.includes('leaf-ledger') === true)
+   leafLedger?.kind === 'repo' && leafLedger.url.includes('leaf-ledger'))
 ok('and merging reports no drift when they agree',
    multi.issues.filter((i) => i.problem.includes('drifted')).length === 0,
    multi.issues.map((i) => i.problem).join('; '))
@@ -531,6 +535,343 @@ ok('and yields an empty forest', missing.forest.byId.size === 0)
 const emptyDir = mkdtempSync(join(tmpdir(), 'eh-cap-empty-'))
 ok('a directory with no manifests is not an error',
    (await loadForest(emptyDir)).issues.length === 0)
+
+/* ============================ spec v1 delta ============================== */
+
+/* ------------------------------------------------------------ repo roles */
+
+const repoRoles = (yaml: string): Array<{ repoId: string; role: string }> =>
+  (parseManifest(yaml).capabilities[0]?.repos ?? []).map((r) => ({ repoId: r.repoId, role: r.role }))
+
+const ONE_REPO = 'id: x\nkind: delivery\nrepos: [{ repoId: a, url: u }]'
+ok('a single repo with no role is the lead', repoRoles(ONE_REPO)[0]?.role === 'lead',
+   JSON.stringify(repoRoles(ONE_REPO)))
+// Over-eager inference would silently choose where the ledger lives.
+ok('two repos with no roles get no inferred lead',
+   repoRoles('id: x\nkind: delivery\nrepos: [{ repoId: a, url: u }, { repoId: b, url: u }]')
+     .every((r) => r.role === 'member'))
+// The raw-vs-pushed length trap: one malformed sibling must not promote the survivor.
+ok('a repo skipped for being malformed does not promote its sibling to lead',
+   repoRoles('id: x\nkind: delivery\nrepos: [{ repoId: a, url: u }, { url: no-id }]')
+     .every((r) => r.role === 'member'),
+   JSON.stringify(repoRoles('id: x\nkind: delivery\nrepos: [{ repoId: a, url: u }, { url: no-id }]')))
+ok('a declared member stays a member',
+   repoRoles('id: x\nkind: delivery\nrepos: [{ repoId: a, url: u, role: member }]')[0]?.role ===
+     'member')
+ok('an explicit lead is kept',
+   repoRoles('id: x\nkind: delivery\nrepos: [{ repoId: a, url: u, role: lead }, { repoId: b, url: u }]')
+     .filter((r) => r.role === 'lead').length === 1)
+// Coercing `role: leed` to member would make the resulting error point at the wrong thing.
+ok('an unknown repo role is refused',
+   bad('id: x\nkind: delivery\nrepos: [{ repoId: a, url: u, role: leed }]')
+     .some((p) => p.includes('lead')))
+
+const leadErrors = (caps: Capability[]): string[] => invalid(caps)
+const twoRepos = (roles: Array<'lead' | 'member'>): Capability[] => [
+  {
+    id: 'd',
+    kind: 'delivery',
+    repos: roles.map((role, i) => ({
+      repoId: `r${i}`,
+      url: 'u',
+      defaultBase: 'main',
+      writePolicy: 'open' as const,
+      role
+    }))
+  }
+]
+
+ok('a delivery node with two repos and no lead is refused',
+   leadErrors(twoRepos(['member', 'member'])).some((p) => p.includes('names no lead')))
+ok('the refusal names the candidate repos',
+   leadErrors(twoRepos(['member', 'member'])).some((p) => p.includes('r0, r1')))
+ok('two leads in one capability is refused',
+   leadErrors(twoRepos(['lead', 'lead'])).some((p) => p.includes('2 leads')))
+ok('and the refusal names both claimants',
+   leadErrors(twoRepos(['lead', 'lead'])).some((p) => p.includes('r0, r1')))
+ok('exactly one lead validates', leadErrors(twoRepos(['lead', 'member'])).length === 0,
+   leadErrors(twoRepos(['lead', 'member'])).join('; '))
+// The regression guard that matters most: repo-less delivery nodes are legal and
+// common, and an unscoped rule would fail most of the fixtures above.
+ok('a delivery node with no repos needs no lead',
+   leadErrors([{ id: 'd', kind: 'delivery' }]).length === 0)
+ok('a business node with repos is not also told about leads',
+   invalid([
+     {
+       id: 'b',
+       kind: 'business',
+       repos: [{ repoId: 'r', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'member' }]
+     }
+   ]).filter((p) => p.includes('lead')).length === 0)
+
+/* ---------------------------------------------------------- ledger union */
+
+const ledgerOf = (yaml: string): unknown => parseManifest(yaml).capabilities[0]?.ledger
+
+ok('a flat ledger parses as a repo ledger',
+   JSON.stringify(ledgerOf('id: x\nkind: business\nledger: { url: "u" }')) ===
+     JSON.stringify({ kind: 'repo', url: 'u' }))
+ok('a flat ledger keeps its defaultBase',
+   JSON.stringify(ledgerOf('id: x\nkind: business\nledger: { url: "u", defaultBase: trunk }')).includes('trunk'))
+// Previously `{}` yielded url:'' — materialized while pointing nowhere.
+ok('an empty ledger block is refused',
+   bad('id: x\nkind: business\nledger: {}').some((p) => p.includes('kind: sidecar')))
+ok('a sidecar ledger defaults its ref',
+   JSON.stringify(ledgerOf('id: x\nkind: delivery\nledger: { kind: sidecar, repo: a }')) ===
+     JSON.stringify({ kind: 'sidecar', repo: 'a', ref: SIDECAR_LEDGER_REF }))
+ok('a sidecar ledger with a different ref is refused',
+   bad('id: x\nkind: delivery\nledger: { kind: sidecar, repo: a, ref: refs/heads/other }')
+     .some((p) => p.includes(SIDECAR_LEDGER_REF)))
+ok('a sidecar with no repo is refused',
+   bad('id: x\nkind: delivery\nledger: { kind: sidecar }').some((p) => p.includes('needs a repo')))
+// The trap the migration design itself creates: absent kind means legacy, so a
+// typo could fall through into {kind:'repo', url:''}.
+ok('an unknown ledger kind is refused',
+   bad('id: x\nkind: delivery\nledger: { kind: sidecart, repo: a }')
+     .some((p) => p.includes('"sidecar" or "repo"')))
+ok('and it does not silently become a repo ledger',
+   ledgerOf('id: x\nkind: delivery\nledger: { kind: sidecart, repo: a }') === undefined)
+
+const sidecar = (repo: string, roles: Array<'lead' | 'member'>): Capability[] => [
+  {
+    id: 'd',
+    kind: 'delivery',
+    ledger: { kind: 'sidecar', repo, ref: SIDECAR_LEDGER_REF },
+    repos: roles.map((role, i) => ({
+      repoId: `r${i}`,
+      url: 'u',
+      defaultBase: 'main',
+      writePolicy: 'open' as const,
+      role
+    }))
+  }
+]
+
+ok('a sidecar in a repo the capability does not own is refused',
+   invalid(sidecar('elsewhere', ['lead'])).some((p) => p.includes('does not own')))
+ok('and the refusal cites single ownership',
+   invalid(sidecar('elsewhere', ['lead'])).some((p) => p.includes('single ownership')))
+// Without this, `role: lead` would be decorative.
+ok('a sidecar in a member repo is refused',
+   invalid(sidecar('r1', ['lead', 'member'])).some((p) => p.includes('the lead is "r0"')))
+ok('and it offers both fixes',
+   invalid(sidecar('r1', ['lead', 'member'])).some((p) => p.includes('move role: lead')))
+ok('a sidecar in the lead repo validates', invalid(sidecar('r0', ['lead'])).length === 0,
+   invalid(sidecar('r0', ['lead'])).join('; '))
+
+ok('a business node with a sidecar ledger is refused',
+   invalid([{ id: 'b', kind: 'business', ledger: { kind: 'sidecar', repo: 'r', ref: SIDECAR_LEDGER_REF } }])
+     .some((p) => p.includes('owns no repo')))
+ok('and it is told to use a standalone repo',
+   invalid([{ id: 'b', kind: 'business', ledger: { kind: 'sidecar', repo: 'r', ref: SIDECAR_LEDGER_REF } }])
+     .some((p) => p.includes('kind: repo')))
+ok('and it is not also told it does not own the repo',
+   invalid([{ id: 'b', kind: 'business', ledger: { kind: 'sidecar', repo: 'r', ref: SIDECAR_LEDGER_REF } }])
+     .filter((p) => p.includes('does not own')).length === 0)
+
+// Back-compat, pinned so tightening it later is deliberate.
+const legacyDelivery = forestOf([
+  { id: 'd', kind: 'delivery', ledger: { kind: 'repo', url: 'u' } }
+])
+ok('a delivery node with a standalone ledger repo elicits rather than fails',
+   validateForest(legacyDelivery).elicitations.some((e) => e.about === 'ledger placement'))
+ok('and the forest still validates', validateForest(legacyDelivery).valid)
+
+ok('a node with a sidecar ledger is not pending materialization',
+   pendingMaterialization(forestOf([
+     {
+       id: 'd',
+       kind: 'delivery',
+       ledger: { kind: 'sidecar', repo: 'r0', ref: SIDECAR_LEDGER_REF },
+       repos: [{ repoId: 'r0', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' }],
+       policy: { budgets: { maxCostUsdPerThread: 5 } }
+     }
+   ])).length === 0)
+
+/* --------------------------------------- knowledge, contacts, tracker */
+
+const KNOW = `
+id: x
+kind: delivery
+knowledge:
+  - { kind: design, title: Design note, url: "https://wiki/x", tags: [design, current], verifiedAt: 2026-07-01 }
+contacts:
+  - { actorId: ashok, role: architect }
+tracker: { system: jira, projectKey: PZN }
+`
+const known = parseManifest(KNOW)
+ok('knowledge, contacts and tracker parse', known.issues.length === 0,
+   known.issues.map((i) => i.problem).join('; '))
+ok('a knowledge ref keeps its tags',
+   JSON.stringify(known.capabilities[0].knowledge?.[0].tags) === JSON.stringify(['design', 'current']))
+ok('a tracker parses', known.capabilities[0].tracker?.projectKey === 'PZN')
+ok('a contact parses', known.capabilities[0].contacts?.[0].role === 'architect')
+
+ok('a knowledge ref with no url is refused',
+   bad('id: x\nkind: delivery\nknowledge: [{ kind: adr, title: T }]').some((p) => p.includes('url')))
+ok('a knowledge ref with no kind defaults to other',
+   parseManifest('id: x\nkind: delivery\nknowledge: [{ title: T, url: u }]')
+     .capabilities[0].knowledge?.[0].kind === 'other')
+// With `other` in the enum, coercion would silently rot the taxonomy tags depend on.
+ok('an unknown knowledge kind is refused',
+   bad('id: x\nkind: delivery\nknowledge: [{ kind: runbok, title: T, url: u }]')
+     .some((p) => p.includes('runbook')))
+ok('a malformed verifiedAt is refused',
+   bad('id: x\nkind: delivery\nknowledge: [{ title: T, url: u, verifiedAt: last tuesday }]')
+     .some((p) => p.includes('YYYY-MM-DD')))
+ok('a contact needs both fields',
+   bad('id: x\nkind: delivery\ncontacts: [{ actorId: ashok }]').some((p) => p.includes('role')))
+ok('an unknown tracker system is refused',
+   bad('id: x\nkind: delivery\ntracker: { system: linear, projectKey: X }')
+     .some((p) => p.includes('jira')))
+
+// One person legitimately holds two roles; dedupe is on the pair.
+ok('the same actor in two roles is legal',
+   invalid([{ id: 'x', kind: 'delivery', contacts: [
+     { actorId: 'a', role: 'architect' }, { actorId: 'a', role: 'deliver' }] }]).length === 0)
+ok('the same actor and role twice is refused',
+   invalid([{ id: 'x', kind: 'delivery', contacts: [
+     { actorId: 'a', role: 'architect' }, { actorId: 'a', role: 'architect' }] }])
+     .some((p) => p.includes('twice as architect')))
+
+ok('a node with only knowledge is not empty',
+   !emptyNodes(forestOf([
+     { id: 'x', kind: 'delivery', knowledge: [{ kind: 'wiki', title: 'T', url: 'u' }] }
+   ])).includes('x'))
+// A wiki link is not governance.
+ok('a node with only knowledge does not need a ledger',
+   pendingMaterialization(forestOf([
+     { id: 'x', kind: 'delivery', knowledge: [{ kind: 'wiki', title: 'T', url: 'u' }] }
+   ])).length === 0)
+
+/* ------------------------------------------- gate satisfiability (R18) */
+
+const gated = (contacts: Array<{ actorId: string; role: string }>, at: 'root' | 'leaf'): CapabilityForest =>
+  forestOf([
+    {
+      id: 'root',
+      kind: 'business',
+      ...(at === 'root' ? { contacts } : {})
+    },
+    {
+      id: 'leaf',
+      kind: 'delivery',
+      parent: 'root',
+      policy: { requiredGates: [{ on: 'deliver', role: 'architect' }] },
+      ...(at === 'leaf' ? { contacts } : {})
+    }
+  ])
+
+const unsatisfiable = validateForest(gated([], 'leaf'))
+ok('a gate no contact can satisfy elicits',
+   unsatisfiable.elicitations.some((e) => e.about === 'gate deliver/architect'))
+// Warn, not fail: failing would push people to add placeholder contacts.
+ok('and the forest still validates', unsatisfiable.valid)
+ok('the question names the path',
+   unsatisfiable.elicitations.some((e) => e.question.includes('root / leaf')))
+ok('a contact on the node satisfies its own gate',
+   validateForest(gated([{ actorId: 'a', role: 'architect' }], 'leaf'))
+     .elicitations.filter((e) => e.about.startsWith('gate')).length === 0)
+// Inherited authority counts — the whole point of resolving along the path.
+ok('a contact on an ancestor satisfies a descendant gate',
+   validateForest(gated([{ actorId: 'a', role: 'architect' }], 'root'))
+     .elicitations.filter((e) => e.about.startsWith('gate')).length === 0)
+
+/* ---------------------------------------------------------- pointer files */
+
+const POINTER = 'pointer: capability\ncapability: payments.retry\nrepoId: retry-svc'
+const pointerParsed = parseManifest(POINTER, '.singularity/capability.yaml')
+
+// The phantom-duplicate failure.
+ok('a pointer file yields no capability', pointerParsed.capabilities.length === 0)
+ok('a pointer is returned as a pointer', pointerParsed.pointers.length === 1)
+// Optional-chained on purpose: when the classification breaks, this should
+// report a named failure rather than crashing the harness before the results.
+ok('with its back-reference', pointerParsed.pointers[0]?.capability === 'payments.retry')
+// Classification by absent `kind` would emit "missing kind" here.
+ok('a pointer is not reported as a broken manifest', pointerParsed.issues.length === 0,
+   pointerParsed.issues.map((i) => i.problem).join('; '))
+// The negative control: a positive marker must not swallow broken manifests.
+ok('a manifest missing kind is still refused as a manifest',
+   bad('id: x').some((p) => p.includes('kind must be')))
+ok('a file that is both pointer and manifest is refused',
+   bad('pointer: capability\ncapability: c\nrepoId: r\nkind: delivery')
+     .some((p) => p.includes('one or the other')))
+ok('a pointer with no repoId is refused',
+   bad('pointer: capability\ncapability: c').some((p) => p.includes('repoId')))
+ok('an unknown pointer value is refused',
+   bad('pointer: something\ncapability: c\nrepoId: r').some((p) => p.includes('"capability"')))
+
+const withLead = forestOf([
+  {
+    id: 'payments.retry',
+    kind: 'delivery',
+    repos: [
+      { repoId: 'retry-svc', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'lead' },
+      { repoId: 'retry-web', url: 'u', defaultBase: 'main', writePolicy: 'open', role: 'member' }
+    ]
+  }
+])
+
+ok('a pointer at a member repo reconciles clean',
+   reconcilePointers(withLead, [{ capability: 'payments.retry', repoId: 'retry-web' }]).length === 0)
+// Ties pointers back to roles: the lead carries the manifest, not a pointer.
+ok('a pointer at the lead repo is reported',
+   reconcilePointers(withLead, [{ capability: 'payments.retry', repoId: 'retry-svc' }])[0]?.kind ===
+     'points-at-lead')
+ok('a pointer file contributes nothing to the forest',
+   parseManifests([{ text: POINTER }]).forest.byId.size === 0)
+ok('a stale pointer repoId is reported',
+   reconcilePointers(withLead, [{ capability: 'payments.retry', repoId: 'gone' }])[0]?.kind ===
+     'unknown-repo')
+// A partial scan must not read as a broken pointer.
+ok('a pointer to an unknown capability is informational',
+   reconcilePointers(withLead, [{ capability: 'nope', repoId: 'r' }])[0]?.kind ===
+     'unknown-capability')
+// Single ownership from the repo side — invisible to the manifest-side rule when
+// one of the two manifests was never scanned.
+ok('two pointers claiming one repo for different capabilities is reported',
+   reconcilePointers(withLead, [
+     { capability: 'payments.retry', repoId: 'shared' },
+     { capability: 'other', repoId: 'shared' }
+   ]).filter((f) => f.kind === 'repo-claimed-elsewhere').length === 2)
+// The factoring assertion: validity must not depend on scan completeness.
+ok('validateForest never depends on pointers',
+   validateForest(withLead).valid === validateForest(withLead).valid &&
+     validateForest(withLead).elicitations.length ===
+       validateForest(forestOf([...withLead.byId.values()])).elicitations.length)
+
+/* --------------------------------------------- the loader finds pointers */
+
+const pdir = mkdtempSync(join(tmpdir(), 'eh-ptr-'))
+mkdirSync(join(pdir, 'lead-repo'), { recursive: true })
+mkdirSync(join(pdir, 'member-repo', '.singularity'), { recursive: true })
+mkdirSync(join(pdir, 'member-repo', '.git'), { recursive: true })
+writeFileSync(
+  join(pdir, 'lead-repo', 'capability.yaml'),
+  'id: d\nkind: delivery\nledger: { kind: sidecar, repo: lead }\n' +
+    'repos: [{ repoId: lead, url: u, role: lead }, { repoId: member, url: u }]'
+)
+writeFileSync(
+  join(pdir, 'member-repo', '.singularity', 'capability.yaml'),
+  'pointer: capability\ncapability: d\nrepoId: member'
+)
+// A manifest inside .git must still be invisible.
+writeFileSync(join(pdir, 'member-repo', '.git', 'capability.yaml'), 'id: ghost\nkind: business')
+
+const withPointers = await loadForest(pdir)
+// The load.ts:57 finding — a silent no-op without the exception.
+ok('.singularity is walked into', withPointers.pointers.length === 1,
+   JSON.stringify(withPointers.pointerSources))
+ok('other dot directories are still skipped', !withPointers.forest.byId.has('ghost'))
+ok('pointers are counted apart from manifests',
+   withPointers.sources.length === 1 && withPointers.pointerSources.length === 1,
+   `${withPointers.sources.length}/${withPointers.pointerSources.length}`)
+ok('the pointer creates no phantom capability', withPointers.forest.byId.size === 1)
+ok('and the loaded forest validates', validateForest(withPointers.forest).valid,
+   validateForest(withPointers.forest).errors.map((e) => e.problem).join('; '))
+ok('the member pointer reconciles clean',
+   reconcilePointers(withPointers.forest, withPointers.pointers).length === 0)
 
 console.log('--- results ---')
 let failed = 0

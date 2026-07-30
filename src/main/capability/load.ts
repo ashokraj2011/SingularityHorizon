@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 
 import type { CapabilityForest } from './model'
-import { parseManifests, type ParseIssue } from './parse'
+import { parseManifests, type CapabilityPointer, type ParseIssue } from './parse'
 
 /**
  * The only file in this directory that touches disk.
@@ -21,11 +21,29 @@ import { parseManifests, type ParseIssue } from './parse'
 export interface LoadResult {
   forest: CapabilityForest
   issues: ParseIssue[]
-  /** Manifests found, relative to the root that was scanned. */
+  /**
+   * Manifests found, relative to the root that was scanned. Pointers are
+   * counted separately — folding them in here would make the CLI's "N manifests"
+   * line a lie, since a pointer declares no capability.
+   */
   sources: string[]
+  pointerSources: string[]
+  /** Member-repo back-references, for reconcilePointers. */
+  pointers: CapabilityPointer[]
 }
 
 const MANIFEST_NAME = 'capability.yaml'
+
+/**
+ * The one dot-directory worth descending into.
+ *
+ * Member repos keep their pointer at `.singularity/capability.yaml`, and the
+ * walk skipped every dot-directory — so pointer support would have worked
+ * perfectly and found nothing, with no error anywhere. An allowlist rather than
+ * dropping the dot-skip: not descending into `.git`, `.venv` and `.next` is what
+ * keeps the walk cheap, and `SKIP` still wins.
+ */
+const POINTER_DIR = '.singularity'
 
 /** Directories never worth walking into, and expensive when they are. */
 const SKIP = new Set([
@@ -54,7 +72,13 @@ async function findManifests(root: string, depth: number): Promise<string[]> {
       found.push(join(root, entry.name))
       continue
     }
-    if (!entry.isDirectory() || SKIP.has(entry.name) || entry.name.startsWith('.')) continue
+    if (
+      !entry.isDirectory() ||
+      SKIP.has(entry.name) ||
+      (entry.name.startsWith('.') && entry.name !== POINTER_DIR)
+    ) {
+      continue
+    }
     nested.push(findManifests(join(root, entry.name), depth - 1))
   }
 
@@ -75,7 +99,9 @@ export async function loadForest(root: string, maxDepth = 6): Promise<LoadResult
     return {
       forest: { byId: new Map() },
       issues: [{ at: root, problem: 'no such directory' }],
-      sources: []
+      sources: [],
+      pointerSources: [],
+      pointers: []
     }
   }
 
@@ -96,9 +122,14 @@ export async function loadForest(root: string, maxDepth = 6): Promise<LoadResult
     .map((d) => ({ source: d.source, at: '', problem: 'empty or unreadable' }))
 
   const parsed = parseManifests(readable)
+  const pointerSources = new Set(parsed.pointers.map((p) => p.source ?? ''))
   return {
     forest: parsed.forest,
     issues: [...unreadable, ...parsed.issues],
-    sources: readable.map((d) => d.source ?? '')
+    // Split by what the file turned out to be, which is only known after
+    // parsing — classification is by content, not by path.
+    sources: readable.map((d) => d.source ?? '').filter((s) => !pointerSources.has(s)),
+    pointerSources: [...pointerSources],
+    pointers: parsed.pointers
   }
 }

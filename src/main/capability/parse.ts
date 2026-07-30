@@ -1,7 +1,7 @@
 import { load } from 'js-yaml'
 
-import type { Capability, CapabilityForest } from './model'
-import { forestOf } from './model'
+import type { Capability, CapabilityForest, KnowledgeRef } from './model'
+import { forestOf, SIDECAR_LEDGER_REF } from './model'
 
 /**
  * Manifest parsing.
@@ -30,8 +30,24 @@ export interface ParseIssue {
   problem: string
 }
 
+/**
+ * A member repo's back-reference to its owning capability.
+ *
+ * Member repos carry `.singularity/capability.yaml` so a checkout can say which
+ * capability it belongs to without an index. It is deliberately a back-reference
+ * and not a copy of the ledger location: restating where the ledger lives would
+ * create a second source of truth that goes stale on the first rename.
+ */
+export interface CapabilityPointer {
+  capability: string
+  repoId: string
+  source?: string
+}
+
 export interface ParseResult {
   capabilities: Capability[]
+  /** Pointer files, which are NOT capabilities — see parsePointer. */
+  pointers: CapabilityPointer[]
   issues: ParseIssue[]
 }
 
@@ -41,6 +57,27 @@ const KINDS = new Set(['business', 'delivery'])
 const WRITE_POLICIES = new Set(['open', 'gated'])
 const COMPONENT_KINDS = new Set(['api', 'database', 'queue', 'storage', 'service', 'job'])
 const COMPONENT_STATUSES = new Set(['proposed', 'confirmed', 'stale', 'contradicted'])
+const REPO_ROLES = new Set(['lead', 'member'])
+const KNOWLEDGE_KINDS = new Set(['design', 'runbook', 'adr', 'api-portal', 'wiki', 'other'])
+const LEDGER_KINDS = new Set(['sidecar', 'repo'])
+
+/** Keys that only ever appear on a real manifest, never on a pointer. */
+const MANIFEST_ONLY_KEYS = [
+  'kind',
+  'parent',
+  'repos',
+  'ledger',
+  'policy',
+  'consumes',
+  'components',
+  'children',
+  'knowledge',
+  'contacts',
+  'tracker'
+]
+
+/** A date we can actually compare. `verifiedAt: last tuesday` is worse than none. */
+const DATE_ISH = /^\d{4}-\d{2}-\d{2}([T ].*)?$/
 
 function isRecord(value: unknown): value is Raw {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -57,16 +94,70 @@ function asArray(value: unknown): unknown[] {
  * `parentId` is the node this document's root hangs from — absent for a root
  * manifest. Inline children recurse with their container as parent.
  */
+function parsePointer(
+  raw: Raw,
+  at: string,
+  pointers: CapabilityPointer[],
+  issues: ParseIssue[],
+  source?: string
+): void {
+  if (raw.pointer !== 'capability') {
+    issues.push({
+      source,
+      at: `${at}.pointer`,
+      problem: `must be "capability", got ${JSON.stringify(raw.pointer)}`
+    })
+    return
+  }
+
+  const capability = typeof raw.capability === 'string' ? raw.capability.trim() : ''
+  const repoId = typeof raw.repoId === 'string' ? raw.repoId.trim() : ''
+  if (!capability || !repoId) {
+    issues.push({
+      source,
+      at,
+      problem: 'a pointer needs both `capability` and `repoId`'
+    })
+    return
+  }
+
+  // A file trying to be both must not resolve silently as either.
+  const alsoManifest = MANIFEST_ONLY_KEYS.filter((key) => raw[key] !== undefined)
+  if (alsoManifest.length) {
+    issues.push({
+      source,
+      at,
+      problem:
+        `is a pointer but also carries manifest keys (${alsoManifest.join(', ')}) — ` +
+        'a file is one or the other'
+    })
+    return
+  }
+
+  pointers.push({ capability, repoId, ...(source ? { source } : {}) })
+}
+
 function parseNode(
   raw: unknown,
   at: string,
   parentId: string | undefined,
   out: Capability[],
+  pointers: CapabilityPointer[],
   issues: ParseIssue[],
   source?: string
 ): void {
   if (!isRecord(raw)) {
     issues.push({ source, at, problem: 'expected a mapping' })
+    return
+  }
+
+  // Classified by content, never by path. A caller may name a single file
+  // directly, so there is not always a path context to read; and a file's
+  // meaning should not change when somebody moves it. The positive marker also
+  // keeps a *broken* manifest — one that forgot `kind` — from being silently
+  // reclassified as a pointer and losing its error message.
+  if (raw.pointer !== undefined) {
+    parsePointer(raw, at, pointers, issues, source)
     return
   }
 
@@ -112,6 +203,7 @@ function parseNode(
   /* ------------------------------------------------------------- repos */
 
   const repos = asArray(raw.repos)
+  const anyRoleDeclared = repos.some((r) => isRecord(r) && r.role !== undefined)
   if (repos.length) {
     capability.repos = []
     repos.forEach((entry, index) => {
@@ -134,7 +226,20 @@ function parseNode(
         })
         return
       }
+      const role = typeof entry.role === 'string' ? entry.role : 'member'
+      if (!REPO_ROLES.has(role)) {
+        issues.push({
+          source,
+          at: `${where}.role`,
+          problem: `must be "lead" or "member", got ${JSON.stringify(entry.role)}`
+        })
+        return
+      }
       capability.repos!.push({
+        // Defaults to member, never lead: the lead decides where the ledger
+        // lives, and guessing wrong puts a governance record in a repo nobody
+        // chose.
+        role: role as 'lead' | 'member',
         repoId,
         url: typeof entry.url === 'string' ? entry.url : '',
         // A repo with no stated base is on `main` far more often than it is on
@@ -145,12 +250,60 @@ function parseNode(
     })
   }
 
+  // One repo and no roles stated anywhere: that repo is the lead, because there
+  // is no other candidate. Keyed on the RAW length, not the pushed length — a
+  // node declaring two repos where one is malformed would otherwise promote the
+  // survivor to lead, placing the ledger in a repo nobody picked.
+  if (repos.length === 1 && !anyRoleDeclared && capability.repos?.length === 1) {
+    capability.repos[0].role = 'lead'
+  }
+
   if (isRecord(raw.ledger)) {
-    capability.ledger = {
-      url: typeof raw.ledger.url === 'string' ? raw.ledger.url : '',
-      ...(typeof raw.ledger.defaultBase === 'string'
-        ? { defaultBase: raw.ledger.defaultBase }
-        : {})
+    const ledgerKind = typeof raw.ledger.kind === 'string' ? raw.ledger.kind : undefined
+    const url = typeof raw.ledger.url === 'string' ? raw.ledger.url.trim() : ''
+    const repo = typeof raw.ledger.repo === 'string' ? raw.ledger.repo.trim() : ''
+
+    if (ledgerKind !== undefined && !LEDGER_KINDS.has(ledgerKind)) {
+      issues.push({
+        source,
+        at: `${at}.ledger.kind`,
+        problem: `must be "sidecar" or "repo", got ${JSON.stringify(raw.ledger.kind)}`
+      })
+    } else if (ledgerKind === 'sidecar') {
+      if (!repo) {
+        issues.push({ source, at: `${at}.ledger.repo`, problem: 'a sidecar ledger needs a repo' })
+      } else {
+        const ref = typeof raw.ledger.ref === 'string' ? raw.ledger.ref : SIDECAR_LEDGER_REF
+        if (ref !== SIDECAR_LEDGER_REF) {
+          // A typo here yields a ledger no other tool can find.
+          issues.push({
+            source,
+            at: `${at}.ledger.ref`,
+            problem: `must be ${SIDECAR_LEDGER_REF} — every tool reads that ref`
+          })
+        } else {
+          capability.ledger = { kind: 'sidecar', repo, ref: SIDECAR_LEDGER_REF }
+        }
+      }
+    } else if (url) {
+      // An untagged ledger is structurally a repo ledger missing its tag,
+      // carrying the same meaning — a migration, not a guess. defaultBase is
+      // kept rather than dropped so existing manifests lose nothing.
+      capability.ledger = {
+        kind: 'repo',
+        url,
+        ...(typeof raw.ledger.defaultBase === 'string'
+          ? { defaultBase: raw.ledger.defaultBase }
+          : {})
+      }
+    } else {
+      // Previously this yielded `{url: ''}`, marking the node materialized while
+      // pointing at nothing — and suppressing pendingMaterialization with it.
+      issues.push({
+        source,
+        at: `${at}.ledger`,
+        problem: 'needs kind: sidecar with a repo, or kind: repo with a url'
+      })
     }
   }
 
@@ -338,18 +491,124 @@ function parseNode(
     })
   }
 
+  /* ------------------------------------- knowledge, contacts, tracker */
+
+  // Attached at one fixed point in the single code path through parseNode. The
+  // drift comparison in parseManifests is JSON.stringify-based and therefore
+  // key-order sensitive, so splitting these between the initial literal and a
+  // later branch would make two identical manifests compare unequal.
+
+  const knowledge = asArray(raw.knowledge)
+  if (knowledge.length) {
+    capability.knowledge = []
+    knowledge.forEach((entry, index) => {
+      const where = `${at}.knowledge[${index}]`
+      if (!isRecord(entry)) {
+        issues.push({ source, at: where, problem: 'expected a mapping' })
+        return
+      }
+      const title = typeof entry.title === 'string' ? entry.title.trim() : ''
+      const url = typeof entry.url === 'string' ? entry.url.trim() : ''
+      if (!title || !url) {
+        // A knowledge ref without a url references nothing.
+        issues.push({ source, at: where, problem: 'needs both `title` and `url`' })
+        return
+      }
+      const knowledgeKind = typeof entry.kind === 'string' ? entry.kind : 'other'
+      if (!KNOWLEDGE_KINDS.has(knowledgeKind)) {
+        // Absent defaults, present-but-wrong refuses. Because `other` exists,
+        // coercing `runbok` to it would silently rot the taxonomy that tags and
+        // filtering are built on.
+        issues.push({
+          source,
+          at: `${where}.kind`,
+          problem: `must be one of ${[...KNOWLEDGE_KINDS].join(', ')}`
+        })
+        return
+      }
+      // YAML resolves an unquoted `2026-07-01` to a Date, not a string, and
+      // nobody quotes dates in YAML — so a string-only check silently dropped
+      // every knowledge ref that dated itself the natural way. Normalised to
+      // YYYY-MM-DD either way, so downstream comparison has one shape.
+      let verifiedAt: string | undefined
+      if (entry.verifiedAt !== undefined) {
+        if (entry.verifiedAt instanceof Date && !Number.isNaN(entry.verifiedAt.valueOf())) {
+          verifiedAt = entry.verifiedAt.toISOString().slice(0, 10)
+        } else if (typeof entry.verifiedAt === 'string' && DATE_ISH.test(entry.verifiedAt)) {
+          verifiedAt = entry.verifiedAt
+        } else {
+          issues.push({
+            source,
+            at: `${where}.verifiedAt`,
+            problem:
+              'must be a date (YYYY-MM-DD) — a timestamp nobody can compare is worse than none'
+          })
+          return
+        }
+      }
+      const ref: KnowledgeRef = {
+        kind: knowledgeKind as KnowledgeRef['kind'],
+        title,
+        url,
+        ...(Array.isArray(entry.tags)
+          ? { tags: entry.tags.filter((t): t is string => typeof t === 'string') }
+          : {}),
+        ...(verifiedAt ? { verifiedAt } : {})
+      }
+      capability.knowledge!.push(ref)
+    })
+  }
+
+  const contacts = asArray(raw.contacts)
+  if (contacts.length) {
+    capability.contacts = []
+    contacts.forEach((entry, index) => {
+      const where = `${at}.contacts[${index}]`
+      if (
+        !isRecord(entry) ||
+        typeof entry.actorId !== 'string' ||
+        !entry.actorId.trim() ||
+        typeof entry.role !== 'string' ||
+        !entry.role.trim()
+      ) {
+        issues.push({ source, at: where, problem: 'a contact needs both `actorId` and `role`' })
+        return
+      }
+      capability.contacts!.push({ actorId: entry.actorId.trim(), role: entry.role.trim() })
+    })
+  }
+
+  if (isRecord(raw.tracker)) {
+    const system = typeof raw.tracker.system === 'string' ? raw.tracker.system : ''
+    const projectKey = typeof raw.tracker.projectKey === 'string' ? raw.tracker.projectKey.trim() : ''
+    if (system !== 'jira') {
+      // Refusing an unknown system is how the next one gets added deliberately
+      // rather than accepted here and unhandled downstream.
+      issues.push({
+        source,
+        at: `${at}.tracker.system`,
+        problem: `only "jira" is supported, got ${JSON.stringify(raw.tracker.system)}`
+      })
+    } else if (!projectKey) {
+      issues.push({ source, at: `${at}.tracker.projectKey`, problem: 'is required' })
+    } else {
+      capability.tracker = { system: 'jira', projectKey }
+    }
+  }
+
   out.push(capability)
 
   /* ------------------------------------------- inline, unmaterialized children */
 
   asArray(raw.children).forEach((child, index) => {
-    parseNode(child, `${at}.children[${index}]`, id, out, issues, source)
+    parseNode(child, `${at}.children[${index}]`, id, out, pointers, issues, source)
   })
 }
 
 /** Parse one manifest document. */
 export function parseManifest(text: string, source?: string): ParseResult {
   const capabilities: Capability[] = []
+  const pointers: CapabilityPointer[] = []
   const issues: ParseIssue[] = []
 
   let doc: unknown
@@ -358,21 +617,30 @@ export function parseManifest(text: string, source?: string): ParseResult {
   } catch (error) {
     return {
       capabilities,
+      pointers,
       issues: [{ source, at: '', problem: `not valid YAML: ${(error as Error).message}` }]
     }
   }
 
   if (doc === undefined || doc === null) {
-    return { capabilities, issues: [{ source, at: '', problem: 'the manifest is empty' }] }
+    return { capabilities, pointers, issues: [{ source, at: '', problem: 'the manifest is empty' }] }
   }
 
   // A manifest may be a single node or a list of roots; both appear in practice
   // and neither is ambiguous.
   asArray(doc).forEach((node, index) => {
-    parseNode(node, Array.isArray(doc) ? `[${index}]` : '', undefined, capabilities, issues, source)
+    parseNode(
+      node,
+      Array.isArray(doc) ? `[${index}]` : '',
+      undefined,
+      capabilities,
+      pointers,
+      issues,
+      source
+    )
   })
 
-  return { capabilities, issues }
+  return { capabilities, pointers, issues }
 }
 
 /**
@@ -384,13 +652,20 @@ export function parseManifest(text: string, source?: string): ParseResult {
  */
 export function parseManifests(
   documents: Array<{ text: string; source?: string }>
-): { forest: CapabilityForest; capabilities: Capability[]; issues: ParseIssue[] } {
+): {
+  forest: CapabilityForest
+  capabilities: Capability[]
+  pointers: CapabilityPointer[]
+  issues: ParseIssue[]
+} {
   const capabilities: Capability[] = []
+  const pointers: CapabilityPointer[] = []
   const issues: ParseIssue[] = []
 
   for (const document of documents) {
     const result = parseManifest(document.text, document.source)
     capabilities.push(...result.capabilities)
+    pointers.push(...result.pointers)
     issues.push(...result.issues)
   }
 
@@ -406,6 +681,22 @@ export function parseManifests(
     }
     const winner = capability.ledger ? capability : existing.ledger ? existing : capability
     const loser = winner === capability ? existing : capability
+
+    // Two copies that each declare a ledger and disagree about it is a far more
+    // serious divergence than two differing urls, and the drift check below
+    // cannot see it: it strips `ledger` on purpose, because the inline copy in a
+    // parent legitimately has none.
+    if (
+      winner.ledger &&
+      loser.ledger &&
+      JSON.stringify(winner.ledger) !== JSON.stringify(loser.ledger)
+    ) {
+      issues.push({
+        at: capability.id,
+        problem: 'is claimed by two manifests that disagree about where its ledger lives'
+      })
+    }
+
     if (JSON.stringify({ ...winner, ledger: null }) !== JSON.stringify({ ...loser, ledger: null })) {
       issues.push({
         at: capability.id,
@@ -418,5 +709,5 @@ export function parseManifests(
   }
 
   const deduped = [...merged.values()]
-  return { forest: forestOf(deduped), capabilities: deduped, issues }
+  return { forest: forestOf(deduped), capabilities: deduped, pointers, issues }
 }

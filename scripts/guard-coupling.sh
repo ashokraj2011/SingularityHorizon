@@ -87,4 +87,17 @@ else
   echo "✓ every esm harness keeps typescript external"
 fi
 
+# 8. The capability core is pure: load.ts is the only file that touches IO.
+#
+# That property is what makes the whole correctness surface testable without a
+# filesystem, and it was previously asserted in a doc comment and enforced by
+# nothing.
+hits=$(grep -rn "from 'node:" src/main/capability --include='*.ts' \
+  | grep -v '^src/main/capability/load.ts' || true)
+if [ -n "$hits" ]; then
+  echo "✗ the capability core reaches for IO outside load.ts:"; echo "$hits"; fail=1
+else
+  echo "✓ capability core is IO-free except load.ts"
+fi
+
 exit $fail

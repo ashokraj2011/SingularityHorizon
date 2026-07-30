@@ -26,7 +26,12 @@ import {
   type Capability,
   type CapabilityForest
 } from '../src/main/capability/model'
-import { emptyNodes, pendingMaterialization, validateForest } from '../src/main/capability/validate'
+import {
+  emptyNodes,
+  pendingMaterialization,
+  reconcilePointers,
+  validateForest
+} from '../src/main/capability/validate'
 import { explainGate, resolvePolicy } from '../src/main/capability/resolve'
 
 /**
@@ -66,7 +71,7 @@ const has = (name: string): boolean => flags.has(name)
 
 const root = positionals[0] ?? process.cwd()
 
-const { forest, issues, sources } = await loadForest(root)
+const { forest, issues, sources, pointerSources, pointers } = await loadForest(root)
 
 console.log(`capability forest · ${root}`)
 console.log(
@@ -74,6 +79,9 @@ console.log(
     ? `  ${sources.length} manifest${sources.length === 1 ? '' : 's'}: ${sources.join(', ')}`
     : '  no capability.yaml found'
 )
+if (pointerSources.length) {
+  console.log(`  ${pointerSources.length} pointer file(s): ${pointerSources.join(', ')}`)
+}
 console.log(`  ${forest.byId.size} capabilit${forest.byId.size === 1 ? 'y' : 'ies'}`)
 
 /* ------------------------------------------------------------- parse issues */
@@ -110,6 +118,22 @@ if (pending.length) {
   for (const id of pending) console.log(`  · ${id}`)
 }
 
+/* ------------------------------------------------------- pointer findings */
+
+// Severity is decided here, not in the validator: this is the only layer that
+// knows how much of the org was actually scanned. An unknown capability is
+// almost always a partial scan; two pointers claiming one repo is not.
+const pointerFindings = reconcilePointers(forest, pointers)
+const pointerErrors = pointerFindings.filter((f) => f.kind === 'repo-claimed-elsewhere')
+
+if (pointerFindings.length) {
+  console.log('\npointer files')
+  for (const finding of pointerFindings) {
+    const mark = finding.kind === 'repo-claimed-elsewhere' ? '✗' : '·'
+    console.log(`  ${mark} ${finding.pointer.repoId}: ${finding.detail}`)
+  }
+}
+
 const empty = emptyNodes(forest)
 if (empty.length) {
   // Expected right after an import, and not a problem. Shown so a tree that
@@ -122,7 +146,13 @@ if (empty.length) {
 function printTree(node: Capability, indent: string, f: CapabilityForest): void {
   const marks: string[] = []
   if (node.kind === 'delivery') marks.push(`${node.repos?.length ?? 0} repo${node.repos?.length === 1 ? '' : 's'}`)
-  if (node.ledger) marks.push('materialized')
+  if (node.ledger) {
+    marks.push(
+      node.ledger.kind === 'sidecar' ? `sidecar in ${node.ledger.repo}` : 'standalone ledger repo'
+    )
+  }
+  const lead = node.kind === 'delivery' ? node.repos?.find((r) => r.role === 'lead') : undefined
+  if (lead) marks.push(`lead: ${lead.repoId}`)
   if (node.policy?.budgets?.maxCostUsdPerThread !== undefined) {
     marks.push(`$${node.policy.budgets.maxCostUsdPerThread}`)
   }
@@ -199,7 +229,7 @@ if (cost) {
   }
 }
 
-const failed = issues.length + result.errors.length
+const failed = issues.length + result.errors.length + pointerErrors.length
 console.log(
   failed === 0
     ? `\n✓ forest is valid${result.elicitations.length ? ` (${result.elicitations.length} question(s) outstanding)` : ''}`

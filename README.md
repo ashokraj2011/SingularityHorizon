@@ -244,6 +244,27 @@ Resolution happens host-side. What crosses into the session layer is a flat `Ses
 gate already enforces, plus a capability id for stamping — nothing below that line knows a tree
 exists.
 
+**Ledger placement** is a discriminated union: delivery capabilities use a `sidecar` orphan branch in
+their **lead** repo — exactly one lead per delivery capability, and the lead is *defined* as the repo
+hosting the ledger, which is what stops the label being decorative. Business capabilities use a
+standalone ledger repo, since they own no repo to sidecar and funding numbers should not inherit any
+code repo's read permissions. Member repos carry a `.singularity/capability.yaml` **pointer** — a
+back-reference only, never a copy of the ledger location, because restating that would create a
+second source of truth that goes stale on the first rename.
+
+Pointers reconcile separately from validation, on purpose: a dangling pointer may mean a stale
+pointer *or* a partial scan, and the forest cannot tell which — so folding it into `validateForest`
+would make validity depend on how much of the org somebody happened to walk. One finding is worth
+failing on: two pointers claiming one repo for different capabilities is single ownership seen from
+the repo side, which the manifest-side rule structurally cannot catch when one manifest was never
+scanned.
+
+**Gate satisfiability** warns rather than fails. `Contact.role` and `GateRule.role` share one
+namespace, so a gate is satisfiable when some contact on the root→node path holds its role — and an
+unsatisfiable one elicits, because failing it would push people to add placeholder contacts to quiet
+the validator. Worth knowing what the binding implies: editing `contacts` changes who may approve,
+mitigated (not removed) by the manifest PR itself being gated by CODEOWNERS on the parent ledger.
+
 ### Adding one
 
 Write a stanza in the owning node's `capability.yaml`. A child stays inline in its parent until it
