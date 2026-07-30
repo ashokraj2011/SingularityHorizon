@@ -1,7 +1,7 @@
 {
   "name": "event-horizon",
   "version": "0.1.0",
-  "description": "Event Horizon \u2014 a Singularity tool. Desktop client for coding agents that speak the Agent Client Protocol.",
+  "description": "Event Horizon — a Singularity tool. Desktop client for coding agents that speak the Agent Client Protocol.",
   "main": "./out/main/index.js",
   "//exports": "Consumed as source: the host's bundler compiles the TS/TSX, so types resolve natively and there is no build step to keep in sync. Works today for a workspace/monorepo dependency or a git dependency. Publishing to npm would additionally need a lib build emitting JS + .d.ts.",
   "exports": {
@@ -41,7 +41,7 @@
     "attach:check": "esbuild scripts/attach-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/attach-check.mjs --log-level=error && node out/attach-check.mjs",
     "guard": "sh scripts/guard-coupling.sh",
     "embed:check": "esbuild scripts/embed-check.ts --bundle --platform=node --format=esm --target=node22 --alias:@shared=./src/shared --external:typescript --outfile=out/embed-check.mjs --log-level=error && node out/embed-check.mjs",
-    "check": "npm run guard && npm run install:check && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run policy:check && npm run gate:check && npm run workflow:check && npm run compiler:check && npm run constraint:check && npm run harness:check && npm run endpoints:check && npm run capability:check && npm run provider:check && npm run profile:check && npm run attach:check",
+    "check": "npm run guard && npm run install:check && npm run typecheck && npm run contract:check && npm run context:check && npm run embed:check && npm run skills:check && npm run smoke && npm run outline:check && npm run index:check && npm run persist:check && npm run policy:check && npm run gate:check && npm run workflow:check && npm run compiler:check && npm run constraint:check && npm run harness:check && npm run endpoints:check && npm run capability:check && npm run ledger:check && npm run provider:check && npm run profile:check && npm run attach:check",
     "dist": "electron-vite build && electron-builder",
     "provider:check": "esbuild scripts/provider-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/provider-check.mjs --log-level=error && node out/provider-check.mjs",
     "contract:check": "esbuild scripts/contract-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/contract-check.mjs --log-level=error && node out/contract-check.mjs",
@@ -56,7 +56,8 @@
     "harness:check": "npm run build:harness && esbuild scripts/harness-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/harness-check.mjs --log-level=error && node out/harness-check.mjs",
     "endpoints:check": "esbuild scripts/endpoints-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/endpoints-check.mjs --log-level=error && node out/endpoints-check.mjs",
     "capability:check": "esbuild scripts/capability-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-check.mjs --log-level=error && node out/capability-check.mjs",
-    "capability": "esbuild scripts/capability-cli.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-cli.mjs --log-level=error && node out/capability-cli.mjs"
+    "capability": "esbuild scripts/capability-cli.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-cli.mjs --log-level=error && node out/capability-cli.mjs",
+    "ledger:check": "esbuild scripts/ledger-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/ledger-check.mjs --log-level=error && node out/ledger-check.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0",

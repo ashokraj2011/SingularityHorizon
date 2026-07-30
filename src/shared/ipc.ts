@@ -646,6 +646,34 @@ export interface AcpStudioApi {
     runnable: boolean
   }>
 
+  /**
+   * Compile a plan to GitHub API calls and run it.
+   *
+   * `live` defaults to false, and every layer beneath this defaults the same way:
+   * omitting it is a dry run that makes no requests. Applying for real needs
+   * GITHUB_TOKEN in the environment — this app never takes a token as input,
+   * because a token typed here is a credential it would then have to store.
+   */
+  applyCapability(
+    root: string,
+    draft: Parameters<AcpStudioApi['planCapability']>[1],
+    live?: boolean
+  ): Promise<{
+    ok: boolean
+    dryRun: boolean
+    outcomes: Array<{
+      step: string
+      summary: string
+      method: string
+      path: string
+      status: 'ok' | 'failed' | 'skipped' | 'planned'
+      detail?: string
+      code?: number
+    }>
+    stoppedAt?: string
+    blocked: Array<{ step: string; reason: string }>
+  }>
+
   listEndpoints(): Promise<LlmEndpoint[]>
   saveEndpoint(input: LlmEndpointInput): Promise<{ endpoint: LlmEndpoint; warning?: string }>
   deleteEndpoint(id: string): Promise<void>

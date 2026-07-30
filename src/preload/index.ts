@@ -22,6 +22,7 @@ const api: AcpStudioApi = {
   loadCapabilities: (root) => ipcRenderer.invoke('capability:load', root),
   sghStatus: () => ipcRenderer.invoke('sgh:status'),
   planCapability: (root, draft) => ipcRenderer.invoke('capability:plan', root, draft),
+  applyCapability: (root, draft, live) => ipcRenderer.invoke('capability:apply', root, draft, live),
   listEndpoints: () => ipcRenderer.invoke('llm:list'),
   saveEndpoint: (input) => ipcRenderer.invoke('llm:save', input),
   deleteEndpoint: (id) => ipcRenderer.invoke('llm:delete', id),

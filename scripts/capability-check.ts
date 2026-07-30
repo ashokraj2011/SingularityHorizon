@@ -28,6 +28,8 @@ import { SIDECAR_LEDGER_REF } from '../src/main/capability/model'
 import { reconcilePointers } from '../src/main/capability/validate'
 import { buildCapabilityView } from '../src/main/capability/view'
 import { planMaterialization, type CapabilityDraft } from '../src/main/capability/plan'
+import { compileCalls, demoteToStub, parseRepo } from '../src/main/capability/calls'
+import { dump as dumpYaml } from 'js-yaml'
 import {
   ancestryOf,
   depthOf,
@@ -1128,6 +1130,154 @@ ok('but never runnable while errors stand',
    planMaterialization({ ...draft, parent: 'ghost' }, existing, {
      sghHasCapabilityCommand: true
    }).runnable === false)
+
+/* ============================================ compiling a plan to API calls */
+
+const repoUrls = { 'sel-svc': 'github.com/acme/sel-svc', 'sel-web': 'github.com/acme/sel-web' }
+const compiled = compileCalls(plan, repoUrls, { parentLedgerRepo: 'acme/digital-ledger' })
+
+// The orphan branch is the reason the API beats local git here, so its shape is
+// asserted rather than assumed: a commit with literally no parents.
+const commitCall = compiled.calls.find((c) => c.path.endsWith('/git/commits'))
+ok('the ledger commit has no parents',
+   Array.isArray(commitCall?.body?.parents) && (commitCall!.body!.parents as []).length === 0)
+ok('and the ref is created pointing at it',
+   compiled.calls.some(
+     (c) => c.method === 'POST' && c.path.endsWith('/git/refs') &&
+       c.body?.ref === 'refs/heads/singularity/ledger'
+   ))
+ok('the tree has no base_tree — an orphan starts from nothing',
+   compiled.calls.find((c) => c.path.endsWith('/git/trees'))?.body?.base_tree === undefined)
+
+// Ordering is the whole correctness story: a sha cannot be used before the call
+// that produces it has run.
+const order = compiled.calls.map((c) => c.path)
+const provided = new Set<string>()
+let orderingHolds = true
+for (const call of compiled.calls) {
+  for (const need of call.needs ?? []) if (!provided.has(need)) orderingHolds = false
+  for (const p of call.provides ?? []) provided.add(p.key)
+}
+ok('every placeholder is produced before it is needed', orderingHolds, order.join(' → '))
+ok('blob shas feed the tree',
+   compiled.calls.find((c) => c.path.endsWith('/git/trees'))?.needs?.includes(
+     'blob:capability.yaml'
+   ) === true)
+
+ok('a member repo gets a pointer PR', compiled.calls.some((c) => c.path.endsWith('/pulls')))
+ok('and the pointer PR is best-effort',
+   compiled.calls.filter((c) => c.path.endsWith('/pulls')).every((c) => !c.required))
+ok('while the ledger commit is required', commitCall?.required === true)
+
+// A repoId with no addressable URL must be reported, never quietly dropped: a
+// materialization that silently skipped a repo is the partial state B2 warns of.
+const unaddressable = compileCalls(plan, { 'sel-svc': 'github.com/acme/sel-svc' }, {
+  parentLedgerRepo: 'acme/digital-ledger'
+})
+ok('an unaddressable member repo is reported, not skipped',
+   unaddressable.blocked.some((b) => b.step === 'pointer-pr' && b.reason.includes('sel-web')),
+   unaddressable.blocked.map((b) => `${b.step}: ${b.reason}`).join(' | '))
+ok('and it drops only that repo, not the ledger',
+   unaddressable.calls.some((c) => c.path.endsWith('/git/commits')))
+
+// The parent stanza is required, so an uncompilable one has to be loud.
+const noParentLedger = compileCalls(plan, { 'sel-svc': 'acme/sel-svc' })
+ok('an unknown parent ledger blocks the required stanza step',
+   noParentLedger.blocked.some((b) => b.step === 'parent-stanza'))
+ok('and says why it matters',
+   noParentLedger.blocked.some((b) => b.reason.includes('unreachable')),
+   noParentLedger.blocked.map((b) => b.reason).join(' | '))
+ok('no stanza call is emitted when it cannot be built',
+   !noParentLedger.calls.some((c) => c.step === 'parent-stanza'))
+
+ok('the stanza update is a compare-and-swap',
+   compiled.calls.find((c) => c.step === 'parent-stanza' && c.method === 'PUT')?.expect ===
+     'parent-manifest-sha')
+
+ok('branch protection is best-effort',
+   compiled.calls.find((c) => c.step === 'branch-protection')?.required === false)
+
+ok('a URL, an ssh remote and a bare owner/repo all resolve alike',
+   JSON.stringify(parseRepo('https://github.com/acme/sel-svc.git')) ===
+     JSON.stringify(parseRepo('git@github.com:acme/sel-svc.git')) &&
+   JSON.stringify(parseRepo('acme/sel-svc')) === JSON.stringify(parseRepo('acme/sel-svc')))
+ok('and something unaddressable is refused', parseRepo('sel-svc') === null)
+
+/* ------------------------------------------------- demoting to a stub */
+
+const parentManifest = dumpYaml({
+  id: 'digital',
+  kind: 'business',
+  policy: { budgets: { maxCostUsdPerThread: 50 } }
+})
+const stub: Capability = {
+  id: 'digital.sel',
+  kind: 'delivery',
+  parent: 'digital',
+  ledger: { kind: 'sidecar', repo: 'sel-svc', ref: SIDECAR_LEDGER_REF }
+}
+const demoted = demoteToStub(parentManifest, 'digital', stub)
+
+const reparsed = parseManifest(demoted ?? '')
+ok('the parent survives the rewrite with its policy intact',
+   reparsed.capabilities.some(
+     (c) => c.id === 'digital' && c.policy?.budgets?.maxCostUsdPerThread === 50
+   ))
+ok('and the child stub carries the ledger pointer',
+   reparsed.capabilities.find((c) => c.id === 'digital.sel')?.ledger?.kind === 'sidecar')
+// Nesting is what supplies `parent`; the stub never restates it.
+ok('the stub inherits its parent from the nesting',
+   reparsed.capabilities.find((c) => c.id === 'digital.sel')?.parent === 'digital')
+
+// The point of the stub: the parent's ledger now says where the child's is, which
+// is the only thing making a materialized node discoverable.
+const withStub = parseManifests([
+  { source: 'parent', text: demoted ?? '' },
+  { source: 'child', text: plan.steps.find((s) => s.kind === 'manifest')!.file!.contents }
+])
+ok('a stub plus the real manifest is not reported as drift',
+   withStub.issues.length === 0, withStub.issues.map((i) => i.problem).join(' | '))
+ok('and the materialized copy is the one in effect',
+   (withStub.forest.byId.get('digital.sel')?.repos?.length ?? 0) > 0)
+
+// The check must still bite when the copies genuinely disagree, or relaxing it
+// above would have removed the protection rather than narrowed it.
+const disagreeing = parseManifests([
+  {
+    source: 'parent',
+    text: dumpYaml({
+      id: 'digital',
+      kind: 'business',
+      children: [{ id: 'digital.sel', kind: 'business', ledger: stub.ledger }]
+    })
+  },
+  { source: 'child', text: plan.steps.find((s) => s.kind === 'manifest')!.file!.contents }
+])
+ok('a stub that disagrees on a shared field is still drift',
+   disagreeing.issues.some((i) => i.problem.includes('disagree')),
+   disagreeing.issues.map((i) => i.problem).join(' | '))
+ok('and the drift names the field',
+   disagreeing.issues.some((i) => i.problem.includes('kind')))
+
+// Materializing an existing inline child must shrink its entry, not add a second.
+ok('demoting rewrites the existing child entry in place',
+   (() => {
+     const before = dumpYaml({
+       id: 'digital',
+       kind: 'business',
+       children: [
+         { id: 'digital.sel', kind: 'delivery', repos: [{ repoId: 'sel-svc', url: 'u', role: 'lead' }] }
+       ]
+     })
+     const after = parseManifest(demoteToStub(before, 'digital', stub) ?? '')
+     return after.capabilities.length === 2 &&
+       after.capabilities.find((c) => c.id === 'digital.sel')?.repos === undefined
+   })())
+
+ok('a multi-document parent manifest is refused rather than mangled',
+   demoteToStub('id: a\nkind: business\n---\nid: b\nkind: business\n', 'a', stub) === null)
+ok('and a manifest without the named parent is refused',
+   demoteToStub(parentManifest, 'somewhere-else', stub) === null)
 
 console.log('--- results ---')
 let failed = 0

@@ -697,12 +697,27 @@ export function parseManifests(
       })
     }
 
-    if (JSON.stringify({ ...winner, ledger: null }) !== JSON.stringify({ ...loser, ledger: null })) {
+    // Drift is disagreement on a shared field, not absence of one.
+    //
+    // Materializing demotes the parent's inline copy to a stub — id, kind, parent
+    // and the ledger pointer, nothing else — so that the parent still says where
+    // the child's ledger lives. A stub is a strict subset, and comparing whole
+    // documents would report every correctly materialized node as drifted.
+    //
+    // Absence is safe to ignore precisely because the copy carrying a ledger
+    // wins: a field the loser omits discards nothing. A field the loser *states
+    // differently* is the real hazard, because that value is silently dropped.
+    const disagreeing = (Object.keys(winner) as Array<keyof Capability>)
+      .filter((key) => key !== 'ledger' && key in loser)
+      .filter((key) => JSON.stringify(winner[key]) !== JSON.stringify(loser[key]))
+
+    if (disagreeing.length) {
       issues.push({
         at: capability.id,
         problem:
-          'appears in more than one manifest with different content — the inline copy in the ' +
-          'parent has drifted from the materialized one'
+          'appears in more than one manifest and they disagree about ' +
+          `${disagreeing.join(', ')} — the inline copy in the parent has drifted from the ` +
+          'materialized one, and the materialized value is the one in effect'
       })
     }
     merged.set(capability.id, winner)

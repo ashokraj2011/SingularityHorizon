@@ -1,0 +1,30 @@
+# A demo forest for the Navigator and the create form.
+#
+# `digital` is a business node: governance and rollup, its own ledger repo, and
+# no repos of its own. `digital.sel` is still an inline child — it has not been
+# materialized, so it has no ledger of its own yet. That is the exact state the
+# create form's parent picker is for.
+id: digital
+kind: business
+name: Digital
+ledger:
+  kind: repo
+  url: github.com/acme/digital-ledger
+policy:
+  budgets:
+    maxCostUsdPerThread: 50
+    maxTokensPerStep: 120000
+  requiredGates:
+    - on: deliver
+      role: architect
+  terminalAllowList: [git, npm, node]
+contacts:
+  - actorId: ashok
+    role: architect
+children:
+  - id: digital.pzn
+    kind: business
+    name: Personalization
+    policy:
+      budgets:
+        maxCostUsdPerThread: 40

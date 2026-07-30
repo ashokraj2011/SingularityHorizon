@@ -214,6 +214,12 @@ const fakeApi: AcpStudioApi = {
     command: `sgh capability materialize ${draft.id}`,
     runnable: false
   }),
+  applyCapability: async () => ({
+    ok: true,
+    dryRun: true,
+    outcomes: [],
+    blocked: []
+  }),
   listEndpoints: async () => [],
   saveEndpoint: async (input) => ({
     endpoint: {

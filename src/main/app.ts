@@ -28,7 +28,9 @@ import {
 import { loadForest } from './capability/load'
 import { buildCapabilityView } from './capability/view'
 import { planMaterialization, type CapabilityDraft } from './capability/plan'
+import { compileCalls, ledgerRepoUrlOf } from './capability/calls'
 import { probeSgh } from './sgh'
+import { GitHubApplier } from './ledger'
 import { configureStore } from './store/sessionStore'
 import {
   configureEndpoints,
@@ -223,6 +225,47 @@ handle('capability:plan', async (root: string, draft: CapabilityDraft) => {
   return planMaterialization(draft, forest, {
     sghHasCapabilityCommand: sgh.hasCapabilityCommand
   })
+})
+handle('capability:apply', async (root: string, draft: CapabilityDraft, live?: boolean) => {
+  const { forest } = await loadForest(root)
+  const sgh = await probeSgh()
+  const plan = planMaterialization(draft, forest, {
+    sghHasCapabilityCommand: sgh.hasCapabilityCommand
+  })
+
+  // A plan with errors describes a forest that would be invalid. Compiling it to
+  // requests would just move the failure to somewhere it does damage.
+  if (plan.errors.length) {
+    return { ok: false, dryRun: true, outcomes: [], blocked: plan.errors.map((reason) => ({ step: 'plan', reason })) }
+  }
+
+  const parent = draft.parent ? forest.byId.get(draft.parent) : undefined
+  const parentLedger = ledgerRepoUrlOf(parent)
+
+  const { calls, blocked } = compileCalls(
+    plan,
+    Object.fromEntries((draft.repos ?? []).map((r) => [r.repoId, r.url])),
+    { parentLedgerRepo: parentLedger }
+  )
+
+  // Read from the environment only. A token typed into this app would be a
+  // credential this app then has to store, and it has no business holding one.
+  const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN
+  if (live && !token) {
+    return {
+      ok: false,
+      dryRun: true,
+      outcomes: [],
+      blocked: [{ step: 'auth', reason: 'set GITHUB_TOKEN in the environment to apply for real' }]
+    }
+  }
+
+  return new GitHubApplier({
+    token: token ?? '',
+    baseUrl: process.env.GITHUB_API_URL,
+    // Anything short of an explicit true is a dry run.
+    dryRun: live !== true
+  }).apply(calls, blocked)
 })
 handle('llm:list', () => listEndpoints())
 handle('llm:save', (input) => saveEndpoint(input))
