@@ -57,7 +57,8 @@
     "endpoints:check": "esbuild scripts/endpoints-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/endpoints-check.mjs --log-level=error && node out/endpoints-check.mjs",
     "capability:check": "esbuild scripts/capability-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-check.mjs --log-level=error && node out/capability-check.mjs",
     "capability": "esbuild scripts/capability-cli.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/capability-cli.mjs --log-level=error && node out/capability-cli.mjs",
-    "ledger:check": "esbuild scripts/ledger-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/ledger-check.mjs --log-level=error && node out/ledger-check.mjs"
+    "ledger:check": "esbuild scripts/ledger-check.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/ledger-check.mjs --log-level=error && node out/ledger-check.mjs",
+    "workflow": "esbuild scripts/workflow-cli.ts --bundle --platform=node --format=esm --target=node22 --external:typescript --outfile=out/workflow-cli.mjs --log-level=error && node out/workflow-cli.mjs"
   },
   "dependencies": {
     "diff": "^7.0.0",
